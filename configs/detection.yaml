@@ -1,0 +1,56 @@
+# Detection parameters
+
+sample_rate: 44100
+
+# Bandpass filter
+filter:
+  low_freq: 2000
+  high_freq: 20000
+  order: 4
+
+# Feature extraction
+features:
+  window_ms: 1.0
+  step_ms: 0.25
+
+# Adaptive thresholding
+thresholds:
+  tkeo_z: 6.0
+  ste_z: 6.0
+  hfc_z: 4.0
+  high_low_ratio: 1.2
+  spectral_centroid_min: 8500  # Hz
+  
+# Envelope constraints
+envelope:
+  width_min_ms: 0.2
+  width_max_ms: 1.8
+  db_threshold: -10
+
+# Refractory period
+refractory_ms: 1.5
+
+# Segmentation
+segmentation:
+  pre_ms: 2.0
+  post_ms: 10.0
+  peak_factor_min_db: 10.0
+  energy_ratio_min: 1.8
+
+# Train building
+train:
+  min_ici_ms: 5.0
+  max_ici_ms: 150.0
+  min_train_clicks: 2
+  max_ici_cv: 0.4
+  
+# Doublet special case
+doublet:
+  min_ici_ms: 8.0
+  max_ici_ms: 80.0
+  min_confidence: 0.85
+
+# Batch processing
+batch:
+  chunk_duration_s: 60.0
+  overlap_s: 0.5

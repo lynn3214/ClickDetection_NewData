@@ -1,0 +1,25 @@
+# Inference and fusion configuration
+
+# Fusion thresholds
+fusion:
+  high_confidence_threshold: 0.95
+  medium_confidence_threshold: 0.60
+  train_consistency_required: true
+  min_train_clicks: 3
+  max_ici_cv: 0.4
+  
+# Doublet handling
+doublet:
+  min_ici_ms: 8.0
+  max_ici_ms: 80.0
+  min_confidence: 0.85
+  
+# Export options
+export:
+  export_events: true
+  export_trains: true
+  export_audio: true
+  create_summary: true
+  
+# Inference batch size
+batch_size: 32

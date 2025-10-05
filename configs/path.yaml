@@ -1,0 +1,32 @@
+# Data and output directory paths
+
+data:
+  raw_dir: data/raw
+  training_resampled: data/training_resampled
+  test_resampled: data/test_resampled
+  noise_resampled: data/noise_resampled
+  snippets: data/snippets
+
+preprocessing:
+  scan_manifest: data/preprocessing/scan_manifest
+  convert_and_filter: data/preprocessing/convert_and_filter
+
+detection:
+  rules: data/detection/rules
+  candidate_finder: data/detection/candidate_finder
+  segmenter: data/detection/segmenter
+  features_event: data/detection/features_event
+  train_builder: data/detection/train_builder
+  fusion: data/detection/fusion
+  export: data/detection/export
+
+training:
+  dataset: data/training/dataset
+  augment: data/training/augment
+  checkpoints: models/checkpoints
+  logs: logs/training
+
+reports:
+  qa_plots: reports/qa_plots
+  metrics: reports/metrics
+  output: reports/output
