@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Resampling and high-pass filtering utilities for dolphin click detection.
+Resampling and filtering utilities for dolphin click detection.
 """
 
 import argparse
@@ -8,14 +8,14 @@ import logging
 from pathlib import Path
 from typing import Union, List
 import numpy as np
-from scipy.signal import resample_poly, butter, sosfilt
+from scipy.signal import resample_poly, butter, sosfilt, sosfiltfilt
 import soundfile as sf
 import scipy.io as sio
 import h5py
 from tqdm import tqdm
 from datetime import datetime
 
-# 添加全局错误收集列表
+# Global error collection list
 error_logs: List[str] = []
 
 def resample_and_hpf(
@@ -26,7 +26,7 @@ def resample_and_hpf(
     hp_order: int = 4
 ) -> np.ndarray:
     """
-    Resample signal and apply high-pass filter.
+    Resample signal and apply high-pass filter (legacy function).
     
     Args:
         x: Input signal array
@@ -58,17 +58,87 @@ def resample_and_hpf(
     
     return y.astype(np.float32)
 
+
+def resample_and_filter(
+    x: np.ndarray,
+    sr_orig: int,
+    sr_target: int = 44100,
+    hp_cutoff: int = 1000,
+    bandpass_low: float = 2000,
+    bandpass_high: float = 20000,
+    hp_order: int = 4,
+    bp_order: int = 4,
+    use_bandpass: bool = True
+) -> np.ndarray:
+    """
+    Resample signal and apply filtering (highpass + optional bandpass).
+    
+    Args:
+        x: Input signal array
+        sr_orig: Original sampling rate
+        sr_target: Target sampling rate (default 44100)
+        hp_cutoff: High-pass cutoff frequency in Hz (default 1000)
+        bandpass_low: Bandpass low cutoff (default 2000)
+        bandpass_high: Bandpass high cutoff (default 20000)
+        hp_order: High-pass filter order (default 4)
+        bp_order: Bandpass filter order (default 4)
+        use_bandpass: Whether to apply bandpass after highpass (default True)
+        
+    Returns:
+        Filtered and resampled signal as float32
+    """
+    # Handle empty input safely
+    if x is None or len(x) == 0:
+        return np.array([], dtype=np.float32)
+
+    # Resample first
+    if sr_orig != sr_target:
+        g = np.gcd(sr_orig, sr_target)
+        up = sr_target // g
+        down = sr_orig // g
+        y = resample_poly(x, up, down)
+    else:
+        y = x.copy()
+    
+    if len(y) == 0:
+        return y.astype(np.float32)
+    
+    # Step 1: High-pass filter at 1000 Hz (remove very low frequencies)
+    if hp_cutoff > 0 and hp_cutoff < sr_target // 2:
+        sos_hp = butter(hp_order, hp_cutoff, 'highpass', fs=sr_target, output='sos')
+        y = sosfilt(sos_hp, y)
+    
+    # Step 2: Bandpass filter 2-20 kHz (focus on dolphin click range)
+    if use_bandpass and bandpass_low > 0 and bandpass_high < sr_target // 2:
+        # Ensure valid frequency range
+        if bandpass_low >= bandpass_high:
+            bandpass_low = 2000
+            bandpass_high = min(20000, sr_target // 2 - 100)
+        
+        nyq = sr_target / 2
+        low = bandpass_low / nyq
+        high = bandpass_high / nyq
+        
+        # Check validity
+        if 0 < low < 1 and 0 < high < 1 and low < high:
+            sos_bp = butter(bp_order, [low, high], 'bandpass', output='sos')
+            y = sosfiltfilt(sos_bp, y)  # Zero-phase filtering
+    
+    return y.astype(np.float32)
+
+
 def _read_mat_v73_h5(file_path: Path,
                      dataset_key: str = 'newFiltDat',
-                     fs_key: str = 'fs') -> tuple[np.ndarray, int]:
-    """使用 h5py 读取 v7.3 mat，返回 (wave, sr)."""
+                     fs_key: str = 'fs') -> tuple:
+    """Read v7.3 MAT file using h5py, return (wave, sr)."""
     with h5py.File(file_path, 'r') as f:
-        # 1. 读数据
+        # Read data
         if dataset_key not in f:
             raise KeyError(f'Key "{dataset_key}" not found in {file_path}')
         dset = f[dataset_key]
-        data = dset[()]            # 读取到内存，原 dtype 通常 float64
-        # 2. 读采样率
+        data = dset[()]
+        
+        # Read sampling rate
         if fs_key in f:
             sr = int(f[fs_key][()])
         elif fs_key in dset.attrs:
@@ -78,15 +148,14 @@ def _read_mat_v73_h5(file_path: Path,
     return np.asarray(data), sr
 
 
-
-
-def load_audio_file(file_path: Path, mat_channel: int = 10) -> tuple[np.ndarray, int]:
+def load_audio_file(file_path: Path, mat_channel: int = 10) -> tuple:
     """
     Load audio from .wav, .mat, or .pkl file.
     Returns mono waveform (float32) and original sample-rate.
     """
     file_path = Path(file_path)
-    # 如果文件在 noise 目录下，直接当作 pickle 文件处理
+    
+    # Special handling for noise directory
     if file_path.parent.name == 'noise':
         import pickle
         noise = pickle.load(open(file_path, 'rb')).astype(np.float32)
@@ -94,44 +163,56 @@ def load_audio_file(file_path: Path, mat_channel: int = 10) -> tuple[np.ndarray,
     
     suffix = file_path.suffix.lower()
 
-    # ---------- .wav ----------
+    # WAV files
     if suffix == '.wav':
         audio, sr = sf.read(file_path)
         audio = audio.mean(1) if audio.ndim == 2 else audio
         return audio.astype(np.float32), int(sr)
 
-    # ---------- .mat ----------
+    # MAT files
     if suffix == '.mat':
-        try:                                        # 尝试旧格式
+        try:
             mat = sio.loadmat(file_path, squeeze_me=True)
             data = mat['newFiltDat']
             sr = int(mat['fs'])
-        except NotImplementedError:                 # v7.3 → h5py
+        except NotImplementedError:
             data, sr = _read_mat_v73_h5(file_path)
-        # channels ︱ samples 方向判定
+        
+        # Handle channel orientation
         if data.ndim == 2 and data.shape[0] < data.shape[1]:
-            # 形如 (15, 5e6) → 转置
             data = data.T
-        # 选通道
+        
+        # Select channel
         ch_idx = min(mat_channel, data.shape[1] - 1)
         audio = data[:, ch_idx]
         return audio.astype(np.float32), sr
 
-    # ---------- .pkl ----------
+    # Pickle files
     if suffix == '.pkl':
         import pickle
         noise = pickle.load(open(file_path, 'rb')).astype(np.float32)
         return noise, 96000
 
     raise ValueError(f'Unsupported file format: {suffix}')
-    
+
+
 def _process_waveform_and_save(wave: np.ndarray, sr_orig: int,
                                out_path: Path, cfg):
     """Process single waveform and save to file."""
-    # Ensure output file has .wav suffix so soundfile can infer format
     out_path = out_path.with_suffix('.wav')
-    y = resample_and_hpf(wave, sr_orig,
-                         cfg['sr_target'], cfg['hp_cutoff'], cfg['hp_order'])
+    
+    # Apply filtering
+    y = resample_and_filter(
+        wave, sr_orig,
+        sr_target=cfg['sr_target'],
+        hp_cutoff=cfg['hp_cutoff'],
+        bandpass_low=cfg['bandpass_low'],
+        bandpass_high=cfg['bandpass_high'],
+        hp_order=cfg['hp_order'],
+        bp_order=cfg['bp_order'],
+        use_bandpass=cfg['use_bandpass']
+    )
+    
     out_path.parent.mkdir(parents=True, exist_ok=True)
     sf.write(str(out_path), y, cfg['sr_target'])
     logging.info(f"Saved: {out_path}")
@@ -142,28 +223,37 @@ def process_file(
     output_path: Path,
     sr_target: int = 44100,
     hp_cutoff: int = 1000,
+    bandpass_low: float = 2000,
+    bandpass_high: float = 20000,
     hp_order: int = 4,
+    bp_order: int = 4,
+    use_bandpass: bool = True,
     mat_channel: int = 10
 ) -> None:
-    """Process a single audio file."""
+    """Process a single audio file with improved filtering."""
     try:
         cfg = {
             'sr_target': sr_target,
             'hp_cutoff': hp_cutoff,
+            'bandpass_low': bandpass_low,
+            'bandpass_high': bandpass_high,
             'hp_order': hp_order,
+            'bp_order': bp_order,
+            'use_bandpass': use_bandpass,
             'mat_channel': mat_channel
         }
         
         audio, sr_orig = load_audio_file(input_path, mat_channel)
-        if audio.ndim == 2:  # pickle 情况，多行 -> 已在名称中添加索引并写为 .wav
+        output_path = output_path.with_suffix('.wav')
+        
+        if audio.ndim == 2:  # Multiple channels
             for i, row in enumerate(audio):
                 out_file = output_path.with_suffix('').as_posix() + f'_{i:05d}.wav'
                 _process_waveform_and_save(row, sr_orig, Path(out_file), cfg)
             logging.info(f"Processed {len(audio)} segments from: {input_path}")
         else:
-            # Ensure single-file outputs become .wav
             _process_waveform_and_save(audio, sr_orig, output_path, cfg)
-            logging.info(f"Processed: {input_path} -> {output_path.with_suffix('.wav')}")
+            logging.info(f"Processed: {input_path} -> {output_path}")
             
     except Exception as e:
         error_msg = f"Error processing {input_path}: {str(e)}"
@@ -182,8 +272,16 @@ def main():
                         help='Target sampling rate (default: 44100)')
     parser.add_argument('--hp_cutoff', type=int, default=1000,
                         help='High-pass cutoff frequency (default: 1000)')
+    parser.add_argument('--bandpass_low', type=float, default=2000,
+                        help='Bandpass low cutoff (default: 2000)')
+    parser.add_argument('--bandpass_high', type=float, default=20000,
+                        help='Bandpass high cutoff (default: 20000)')
     parser.add_argument('--hp_order', type=int, default=4,
-                        help='Filter order (default: 4)')
+                        help='High-pass filter order (default: 4)')
+    parser.add_argument('--bp_order', type=int, default=4,
+                        help='Bandpass filter order (default: 4)')
+    parser.add_argument('--use_bandpass', action='store_true',
+                        help='Apply bandpass filter (2-20 kHz)')
     parser.add_argument('--mat_channel', type=int, default=10,
                         help='Channel to extract from .mat files (default: 10)')
     parser.add_argument('--verbose', '-v', action='store_true',
@@ -199,23 +297,27 @@ def main():
     output_path = Path(args.output)
     
     if input_path.is_file():
+        # Process single file
         process_file(
             input_path, 
             output_path / input_path.name,
-            args.sr_target,
-            args.hp_cutoff,
-            args.hp_order,
-            args.mat_channel
+            sr_target=args.sr_target,
+            hp_cutoff=args.hp_cutoff,
+            bandpass_low=args.bandpass_low,
+            bandpass_high=args.bandpass_high,
+            hp_order=args.hp_order,
+            bp_order=args.bp_order,
+            use_bandpass=args.use_bandpass,
+            mat_channel=args.mat_channel
         )
     elif input_path.is_dir():
-        # 处理所有文件
+        # Process all files in directory (THIS WAS MISSING!)
         files = list(input_path.rglob('*'))
-        # 修改文件筛选逻辑，排除 .DS_Store 文件
         files = [f for f in files if (
             f.is_file() and
-            f.name != '.DS_Store' and  # 排除 .DS_Store
-            (f.suffix.lower() in ('.wav', '.mat', '.pkl') or  # 有后缀的文件
-             f.parent.name == 'noise')                        # noise目录下的文件
+            f.name != '.DS_Store' and
+            (f.suffix.lower() in ('.wav', '.mat', '.pkl') or
+             f.parent.name == 'noise')
         )]
         
         for file_path in tqdm(files, desc="Processing files"):
@@ -224,16 +326,20 @@ def main():
             process_file(
                 file_path,
                 out_path,
-                args.sr_target,
-                args.hp_cutoff,
-                args.hp_order,
-                args.mat_channel
+                sr_target=args.sr_target,
+                hp_cutoff=args.hp_cutoff,
+                bandpass_low=args.bandpass_low,
+                bandpass_high=args.bandpass_high,
+                hp_order=args.hp_order,
+                bp_order=args.bp_order,
+                use_bandpass=args.use_bandpass,
+                mat_channel=args.mat_channel
             )
     else:
         logging.error(f"Input path does not exist: {input_path}")
         return
     
-    # 处理完成后，保存错误日志
+    # Save error log if any
     if error_logs:
         log_file = output_path / f"errors_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
         log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -241,8 +347,8 @@ def main():
         with open(log_file, 'w', encoding='utf-8') as f:
             f.write("\n".join(error_logs))
         
-        print(f"\n发现 {len(error_logs)} 个错误。详细信息已保存到: {log_file}")
-        print("\n错误摘要:")
+        print(f"\nFound {len(error_logs)} errors. Details saved to: {log_file}")
+        print("\nError summary:")
         for error in error_logs:
             print(f"- {error}")
 

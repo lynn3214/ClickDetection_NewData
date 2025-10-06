@@ -15,16 +15,16 @@ features:
 
 # Adaptive thresholding
 thresholds:
-  tkeo_z: 6.0
-  ste_z: 6.0
-  hfc_z: 4.0
-  high_low_ratio: 1.2
-  spectral_centroid_min: 8500  # Hz
+  tkeo_z: 8.0
+  ste_z: 8.0
+  hfc_z: 5.0
+  high_low_ratio: 1.5
+  spectral_centroid_min: 10000  # Hz
   
 # Envelope constraints
 envelope:
-  width_min_ms: 0.2
-  width_max_ms: 1.8
+  width_min_ms: 0.3
+  width_max_ms: 1.5
   db_threshold: -10
 
 # Refractory period

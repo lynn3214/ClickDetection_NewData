@@ -293,7 +293,7 @@ def cmd_trains(args):
 
 
 def cmd_build_dataset(args):
-    """Execute build-dataset command."""
+    """Execute build-dataset command (修正版)."""
     logger = ProjectLogger()
     config = load_config(args.config)
     
@@ -315,81 +315,89 @@ def cmd_build_dataset(args):
     all_positive_samples = []
     all_negative_samples = []
     
-    # Process positive samples (from detected events)
+    # ========== 处理正样本（已经是0.2s的增强样本）==========
     logger.info(f"Processing positive samples from {events_dir}")
     
-    # Method 1: If events are saved as individual wav files
-    event_audio_files = list(events_dir.rglob('*.wav'))
-    if event_audio_files:
-        logger.info(f"Found {len(event_audio_files)} event audio files")
-        for audio_file in event_audio_files:
-            try:
-                audio, sr = sf.read(audio_file)
-                if sr != sample_rate:
-                    audio = librosa.resample(audio, orig_sr=sr, target_sr=sample_rate)
-                
-                # Assume click is centered, create 0.2s window
-                file_id = audio_file.stem
-                positive_sample = builder._extract_centered_window(
-                    audio, 
-                    peak_idx=len(audio)//2  # Assume center
-                )
-                
-                all_positive_samples.append({
-                    'waveform': positive_sample,
-                    'label': 1,
-                    'file_id': file_id
-                })
-            except Exception as e:
-                logger.error(f"Error processing {audio_file}: {e}")
-                continue
+    positive_files = list(events_dir.rglob('*.wav'))
     
-    # Method 2: If events.csv exists with full audio
-    events_csv = events_dir / 'all_events.csv'
-    if events_csv.exists() and not event_audio_files:
-        logger.info(f"Building from events CSV: {events_csv}")
-        import pandas as pd
-        events_df = pd.read_csv(events_csv)
-        
-        # Group by source file
-        for source_file in events_df['source_file'].unique():
-            try:
-                audio, sr = sf.read(source_file)
-                if sr != sample_rate:
-                    audio = librosa.resample(audio, orig_sr=sr, target_sr=sample_rate)
-                
-                file_events = events_df[events_df['source_file'] == source_file]
-                file_id = Path(source_file).stem
-                
-                for _, event in file_events.iterrows():
-                    peak_idx = int(event['peak_idx'])
-                    window = builder._extract_centered_window(audio, peak_idx)
-                    
-                    if window is not None:
-                        all_positive_samples.append({
-                            'waveform': window,
-                            'label': 1,
-                            'file_id': file_id
-                        })
-            except Exception as e:
-                logger.error(f"Error processing {source_file}: {e}")
-                continue
+    if not positive_files:
+        logger.error(f"No positive samples found in {events_dir}")
+        return
+    
+    logger.info(f"Found {len(positive_files)} positive audio files")
+    
+    from tqdm import tqdm
+    for audio_file in tqdm(positive_files, desc="Loading positive samples"):
+        try:
+            audio, sr = sf.read(audio_file)
+            
+            if sr != sample_rate:
+                import librosa
+                audio = librosa.resample(audio, orig_sr=sr, target_sr=sample_rate)
+            
+            # 确保单声道
+            if audio.ndim == 2:
+                audio = audio.mean(axis=1)
+            
+            # 验证长度
+            expected_length = int(dataset_config['window_ms'] * sample_rate / 1000)
+            if len(audio) != expected_length:
+                logger.warning(
+                    f"{audio_file.name}: length {len(audio)} != expected {expected_length}"
+                )
+                if len(audio) < expected_length:
+                    # Pad
+                    pad_length = expected_length - len(audio)
+                    audio = np.pad(audio, (0, pad_length), mode='constant')
+                else:
+                    # Crop
+                    audio = audio[:expected_length]
+            
+            # 标准化
+            audio = builder._normalize_segment(audio)
+            
+            file_id = audio_file.stem
+            all_positive_samples.append({
+                'waveform': audio,
+                'label': 1,
+                'file_id': file_id
+            })
+            
+        except Exception as e:
+            logger.error(f"Error processing {audio_file}: {e}")
+            continue
     
     logger.info(f"Collected {len(all_positive_samples)} positive samples")
     
-    # Process negative samples (from noise)
+    # ========== 处理负样本（从noise随机采样0.2s）==========
     logger.info(f"Processing negative samples from {noise_dir}")
     noise_files = list(noise_dir.rglob('*.wav'))
     
-    n_negative_per_file = max(1, len(all_positive_samples) // max(1, len(noise_files)))
+    if not noise_files:
+        logger.error(f"No noise files found in {noise_dir}")
+        return
     
-    for noise_file in noise_files:
+    # 计算需要多少负样本
+    balance_ratio = dataset_config.get('balance_ratio', 1.0)
+    n_negative_target = int(len(all_positive_samples) * balance_ratio)
+    n_negative_per_file = max(1, n_negative_target // len(noise_files))
+    
+    logger.info(f"Target negative samples: {n_negative_target}")
+    
+    for noise_file in tqdm(noise_files, desc="Loading negative samples"):
         try:
             audio, sr = sf.read(noise_file)
+            
             if sr != sample_rate:
+                import librosa
                 audio = librosa.resample(audio, orig_sr=sr, target_sr=sample_rate)
             
+            if audio.ndim == 2:
+                audio = audio.mean(axis=1)
+            
             file_id = noise_file.stem
+            
+            # 使用 DatasetBuilder 的方法生成负样本
             negative_samples = builder.build_negative_samples(
                 audio, file_id, n_negative_per_file
             )
@@ -401,25 +409,27 @@ def cmd_build_dataset(args):
     
     logger.info(f"Collected {len(all_negative_samples)} negative samples")
     
-    # Combine and balance
+    # ========== 平衡数据集 ==========
     all_samples = all_positive_samples + all_negative_samples
     
     if not all_samples:
-        logger.error("No samples collected! Check input directories.")
+        logger.error("No samples collected!")
         return
     
     balanced_samples = builder.balance_dataset(
         all_samples,
-        balance_ratio=dataset_config.get('balance_ratio', 1.0)
+        balance_ratio=balance_ratio
     )
     
     logger.info(f"Total balanced samples: {len(balanced_samples)}")
+    logger.info(f"  Positive: {sum(1 for s in balanced_samples if s['label']==1)}")
+    logger.info(f"  Negative: {sum(1 for s in balanced_samples if s['label']==0)}")
     
-    # Split into train/val
+    # ========== 划分训练集/验证集 ==========
     val_split = dataset_config.get('val_split', 0.2)
     n_val = int(len(balanced_samples) * val_split)
     
-    np.random.seed(42)  # For reproducibility
+    np.random.seed(42)
     np.random.shuffle(balanced_samples)
     
     train_samples = balanced_samples[n_val:]
@@ -428,7 +438,7 @@ def cmd_build_dataset(args):
     logger.info(f"Train samples: {len(train_samples)}")
     logger.info(f"Val samples: {len(val_samples)}")
     
-    # Save dataset
+    # ========== 保存数据集 ==========
     output_dir.mkdir(parents=True, exist_ok=True)
     builder.save_dataset(train_samples, output_dir, split='train')
     builder.save_dataset(val_samples, output_dir, split='val')
