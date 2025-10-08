@@ -1,0 +1,26 @@
+============================================================
+EVALUATION METRICS
+============================================================
+
+Metadata:
+  checkpoint: checkpoints/best_model.pt
+  positive_dir: data/test_resampled
+  negative_dir: data/test_noise_segments
+  file_threshold: 0.5
+  min_positive_ratio: 0.1
+  total_files: 302
+  positive_files: 177
+  negative_files: 125
+
+Classification Metrics:
+  Accuracy:  0.9073
+  Precision: 0.8670
+  Recall:    0.9944
+  F1 Score:  0.9263
+
+  ROC AUC:   0.9955
+  PR AUC:    0.9972
+
+Confusion Matrix:
+  TN: 98     FP: 27
+  FN: 1      TP: 176

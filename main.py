@@ -107,6 +107,29 @@ def setup_argparse():
                             help='Test dataset directory')
     eval_parser.add_argument('--output-dir', type=str, required=True,
                             help='Output directory for reports')
+
+    # Eval-wav command (新增)
+    eval_wav_parser = subparsers.add_parser(
+        'eval-wav', 
+        help='Evaluate model on wav files (file-level classification)'
+    )
+    eval_wav_parser.add_argument('--checkpoint', type=str, required=True,
+                                help='Model checkpoint path')
+    eval_wav_parser.add_argument('--positive-dir', type=str, 
+                                default='data/test_resampled',
+                                help='Directory with files containing clicks')
+    eval_wav_parser.add_argument('--negative-dir', type=str,
+                                default='data/noise_resampled',
+                                help='Directory with noise files')
+    eval_wav_parser.add_argument('--output-dir', type=str, required=True,
+                                help='Output directory for results')
+    eval_wav_parser.add_argument('--config', type=str, 
+                                default='configs/eval_wav.yaml',
+                                help='Evaluation config file')
+    eval_wav_parser.add_argument('--file-threshold', type=float,
+                                help='Window-level threshold (overrides config)')
+    eval_wav_parser.add_argument('--min-positive-ratio', type=float,
+                                help='Min positive ratio (overrides config)')
     
     # Export command
     export_parser = subparsers.add_parser('export', help='Export final detections')
@@ -293,18 +316,29 @@ def cmd_trains(args):
 
 
 def cmd_build_dataset(args):
+<<<<<<< Updated upstream
     """Execute build-dataset command."""
+=======
+    """Execute build-dataset command (优化版 - 120ms输入)."""
+>>>>>>> Stashed changes
     logger = ProjectLogger()
     config = load_config(args.config)
     
-    logger.info("Building training dataset")
+    logger.info("Building training dataset (120ms samples)")
     
     # Initialize dataset builder
     dataset_config = config['dataset']
     sample_rate = config.get('sample_rate', 44100)
+    
+    # 确保使用120ms窗口
+    window_ms = dataset_config.get('window_ms', 120.0)
+    expected_length = int(window_ms * sample_rate / 1000)  # 5292样本
+    
+    logger.info(f"Window duration: {window_ms}ms ({expected_length} samples)")
+    
     builder = DatasetBuilder(
         sample_rate=sample_rate,
-        window_ms=dataset_config['window_ms'],
+        window_ms=window_ms,
         random_offset_ms=dataset_config['random_offset_ms']
     )
     
@@ -315,6 +349,7 @@ def cmd_build_dataset(args):
     all_positive_samples = []
     all_negative_samples = []
     
+<<<<<<< Updated upstream
     # Process positive samples (from detected events)
     logger.info(f"Processing positive samples from {events_dir}")
     
@@ -378,12 +413,82 @@ def cmd_build_dataset(args):
     logger.info(f"Collected {len(all_positive_samples)} positive samples")
     
     # Process negative samples (from noise)
+=======
+    # ========== 处理正样本（应该已经是120ms的片段）==========
+    logger.info(f"Processing positive samples from {events_dir}")
+    
+    positive_files = list(events_dir.rglob('*.wav'))
+    
+    if not positive_files:
+        logger.error(f"No positive samples found in {events_dir}")
+        return
+    
+    logger.info(f"Found {len(positive_files)} positive audio files")
+    
+    from tqdm import tqdm
+    for audio_file in tqdm(positive_files, desc="Loading positive samples"):
+        try:
+            audio, sr = sf.read(audio_file)
+            
+            if sr != sample_rate:
+                import librosa
+                audio = librosa.resample(audio, orig_sr=sr, target_sr=sample_rate)
+            
+            # 确保单声道
+            if audio.ndim == 2:
+                audio = audio.mean(axis=1)
+            
+            # 验证长度
+            if len(audio) != expected_length:
+                logger.warning(
+                    f"{audio_file.name}: length {len(audio)} != expected {expected_length}"
+                )
+                # 调整长度
+                if len(audio) < expected_length:
+                    # Pad
+                    pad_length = expected_length - len(audio)
+                    audio = np.pad(audio, (0, pad_length), mode='constant')
+                else:
+                    # Crop to center
+                    start = (len(audio) - expected_length) // 2
+                    audio = audio[start:start + expected_length]
+            
+            # 标准化
+            audio = builder._normalize_segment(audio)
+            
+            file_id = audio_file.stem
+            all_positive_samples.append({
+                'waveform': audio,
+                'label': 1,
+                'file_id': file_id
+            })
+            
+        except Exception as e:
+            logger.error(f"Error processing {audio_file}: {e}")
+            continue
+    
+    logger.info(f"Collected {len(all_positive_samples)} positive samples")
+    
+    # ========== 处理负样本（从noise随机采样120ms）==========
+>>>>>>> Stashed changes
     logger.info(f"Processing negative samples from {noise_dir}")
     noise_files = list(noise_dir.rglob('*.wav'))
     
     n_negative_per_file = max(1, len(all_positive_samples) // max(1, len(noise_files)))
     
+<<<<<<< Updated upstream
     for noise_file in noise_files:
+=======
+    # 计算需要多少负样本
+    balance_ratio = dataset_config.get('balance_ratio', 1.0)
+    n_negative_target = int(len(all_positive_samples) * balance_ratio)
+    n_negative_per_file = max(1, n_negative_target // len(noise_files))
+    
+    logger.info(f"Target negative samples: {n_negative_target}")
+    logger.info(f"Samples per noise file: {n_negative_per_file}")
+    
+    for noise_file in tqdm(noise_files, desc="Loading negative samples"):
+>>>>>>> Stashed changes
         try:
             audio, sr = sf.read(noise_file)
             if sr != sample_rate:
@@ -415,7 +520,15 @@ def cmd_build_dataset(args):
     
     logger.info(f"Total balanced samples: {len(balanced_samples)}")
     
+<<<<<<< Updated upstream
     # Split into train/val
+=======
+    # 验证样本形状
+    sample_lengths = [len(s['waveform']) for s in balanced_samples[:10]]
+    logger.info(f"Sample lengths (first 10): {sample_lengths}")
+    
+    # ========== 划分训练集/验证集 ==========
+>>>>>>> Stashed changes
     val_split = dataset_config.get('val_split', 0.2)
     n_val = int(len(balanced_samples) * val_split)
     
@@ -434,6 +547,8 @@ def cmd_build_dataset(args):
     builder.save_dataset(val_samples, output_dir, split='val')
     
     logger.info("Dataset building completed")
+    logger.info(f"Dataset saved to: {output_dir}")
+    logger.info(f"Window duration: {window_ms}ms ({expected_length} samples)")
 
 
 def cmd_train(args):
@@ -663,6 +778,35 @@ def cmd_export(args):
     
     logger.info("Export completed successfully")
 
+def cmd_eval_wav(args):
+    """Execute eval-wav command."""
+    logger = ProjectLogger()
+    config = load_config(args.config)
+    
+    logger.info("开始 WAV 文件评估")
+    
+    # 使用配置文件或命令行参数
+    positive_dir = args.positive_dir or config['data']['positive_dir']
+    negative_dir = args.negative_dir or config['data']['negative_dir']
+    file_threshold = args.file_threshold or config['thresholds']['window_threshold']
+    min_positive_ratio = args.min_positive_ratio or config['thresholds']['min_positive_ratio']
+    
+    # 导入评估函数
+    from eval_wav_files import evaluate_wav_dataset
+    
+    # 执行评估
+    metrics, results = evaluate_wav_dataset(
+        checkpoint_path=args.checkpoint,
+        positive_dir=positive_dir,
+        negative_dir=negative_dir,
+        output_dir=args.output_dir,
+        file_threshold=file_threshold,
+        min_positive_ratio=min_positive_ratio,
+        device=config['inference'].get('device', 'cpu')
+    )
+    
+    logger.info("WAV 文件评估完成")
+
 
 def main():
     """Main entry point."""
@@ -682,6 +826,7 @@ def main():
         'build-dataset': cmd_build_dataset,
         'train': cmd_train,
         'eval': cmd_eval,
+        'eval-wav': cmd_eval_wav,
         'export': cmd_export
     }
     

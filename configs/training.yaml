@@ -1,16 +1,20 @@
-# Training configuration
+# Training configuration (优化版 - 120ms输入 + 轻量级模型)
+
+# Sample rate
+sample_rate: 44100
 
 # Model architecture
 model:
-  input_length: 8820  # 0.2s at 44.1kHz
+  use_lightweight: true  # 使用轻量级模型
+  input_length: 5292     # 0.12s at 44.1kHz (120ms)
   num_classes: 2
-  base_channels: 32
-  num_blocks: 4
+  base_channels: 16      # 轻量级: 16 (原版: 32)
+  num_blocks: 3          # 轻量级: 3  (原版: 4)
   dropout: 0.3
 
 # Training parameters
 training:
-  batch_size: 64
+  batch_size: 128        # 可以增大batch size (原64 -> 128)
   num_epochs: 100
   learning_rate: 0.001
   weight_decay: 0.0001
@@ -25,10 +29,19 @@ augmentation:
   
 # Dataset construction
 dataset:
-  window_ms: 200.0
-  random_offset_ms: 20.0
-  balance_ratio: 1.0  # negative/positive ratio
+  window_ms: 120.0           # 改为120ms (原200ms)
+  random_offset_ms: 10.0
+  balance_ratio: 1.0         # negative/positive ratio
   val_split: 0.2
   
 # Device
 device: cpu  # or 'cuda'
+
+# 可选：如果想用原版模型（更慢但可能更准确）
+# model:
+#   use_lightweight: false
+#   input_length: 5292
+#   num_classes: 2
+#   base_channels: 32
+#   num_blocks: 4
+#   dropout: 0.3

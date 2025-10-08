@@ -1,0 +1,30 @@
+============================================================
+EVALUATION METRICS
+============================================================
+
+Metadata:
+  checkpoint: checkpoints/best_model_earlystopping.pt
+  positive_dir: data/test_resampled
+  negative_dir: data/test_noise_segments
+  file_threshold: 0.5
+  min_positive_ratio: 0.1
+  total_files: 531
+  positive_files: 177
+  negative_files: 354
+  negative_sampling: ratio
+  pos_neg_ratio: 1:2
+  max_negative_samples: None
+  random_seed: 42
+
+Classification Metrics:
+  Accuracy:  0.9962
+  Precision: 0.9944
+  Recall:    0.9944
+  F1 Score:  0.9944
+
+  ROC AUC:   1.0000
+  PR AUC:    0.9999
+
+Confusion Matrix:
+  TN: 353    FP: 1
+  FN: 1      TP: 176

@@ -1,0 +1,26 @@
+{
+  "true_positives": 176,
+  "false_positives": 1,
+  "false_negatives": 1,
+  "true_negatives": 353,
+  "precision": 0.9943502824858758,
+  "recall": 0.9943502824858758,
+  "f1_score": 0.9943502824858758,
+  "accuracy": 0.9962335216572504,
+  "roc_auc": 0.9999680806920106,
+  "pr_auc": 0.9999361603651464,
+  "metadata": {
+    "checkpoint": "checkpoints/best_model_earlystopping.pt",
+    "positive_dir": "data/test_resampled",
+    "negative_dir": "data/test_noise_segments",
+    "file_threshold": 0.5,
+    "min_positive_ratio": 0.1,
+    "total_files": 531,
+    "positive_files": 177,
+    "negative_files": 354,
+    "negative_sampling": "ratio",
+    "pos_neg_ratio": "1:2",
+    "max_negative_samples": null,
+    "random_seed": 42
+  }
+}

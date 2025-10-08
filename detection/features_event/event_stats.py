@@ -1,5 +1,5 @@
 """
-Event-level feature extraction and quality scoring.
+增强的事件级特征提取，包含瞬态特征。
 """
 
 import numpy as np
@@ -11,8 +11,8 @@ from detection.candidate_finder.dynamic_threshold import ClickCandidate
 from utils.dsp.envelope import compute_peak_factor, compute_energy_ratio
 
 
-class EventStatsExtractor:
-    """Extracts event-level statistics and quality scores."""
+class EnhancedEventStatsExtractor:
+    """提取事件级统计信息和质量评分，包含瞬态特征"""
     
     def __init__(self, sample_rate: int = 44100):
         """
@@ -27,11 +27,11 @@ class EventStatsExtractor:
                            audio: np.ndarray,
                            candidate: ClickCandidate) -> Dict[str, Any]:
         """
-        Extract comprehensive event statistics.
+        Extract comprehensive event statistics including transient features.
         
         Args:
             audio: Full audio signal
-            candidate: Click candidate
+            candidate: Click candidate with transient features
             
         Returns:
             Dictionary of event statistics
@@ -52,7 +52,7 @@ class EventStatsExtractor:
         # Peak factor
         peak_factor = compute_peak_factor(segment)
         
-        # Energy ratio (short/long)
+        # Energy ratio
         energy_ratio = compute_energy_ratio(
             segment, self.sample_rate, 
             short_ms=1.0, long_ms=5.0
@@ -64,15 +64,13 @@ class EventStatsExtractor:
         # Spectral features
         spectral_stats = self._compute_spectral_stats(segment)
         
-        # Envelope width (already in candidate)
-        envelope_width = candidate.envelope_width
-        
         # Quality score
         quality_score = self._compute_quality_score(
-            peak_factor, energy_ratio, envelope_width,
+            peak_factor, energy_ratio, candidate.envelope_width,
             candidate.spectral_centroid, candidate.high_low_ratio
         )
         
+        # 基础统计
         stats = {
             'peak_idx': peak_idx,
             'peak_time': candidate.peak_time,
@@ -82,7 +80,7 @@ class EventStatsExtractor:
             'peak_factor': float(peak_factor),
             'energy_ratio': float(energy_ratio),
             'zcr': float(zcr),
-            'envelope_width': float(envelope_width),
+            'envelope_width': float(candidate.envelope_width),
             'spectral_centroid': float(candidate.spectral_centroid),
             'high_low_ratio': float(candidate.high_low_ratio),
             'tkeo_value': float(candidate.tkeo_value),
@@ -90,42 +88,36 @@ class EventStatsExtractor:
             'hfc_value': float(candidate.hfc_value),
             'confidence_score': float(candidate.confidence_score),
             'quality_score': float(quality_score),
-            **spectral_stats
         }
+        
+        # 添加瞬态特征（如果存在）
+        if candidate.transient_features:
+            for key, value in candidate.transient_features.items():
+                stats[f'transient_{key}'] = float(value)
+        
+        # 添加海豚可能性评分
+        stats['dolphin_likelihood'] = float(candidate.dolphin_likelihood)
+        
+        # 添加频谱统计
+        stats.update(spectral_stats)
         
         return stats
         
     def _compute_zcr(self, signal: np.ndarray) -> float:
-        """
-        Compute zero crossing rate.
-        
-        Args:
-            signal: Input signal
-            
-        Returns:
-            Zero crossing rate (normalized)
-        """
+        """Compute zero crossing rate."""
         signs = np.sign(signal)
         zero_crossings = np.sum(np.abs(np.diff(signs))) / 2
         return zero_crossings / len(signal)
         
     def _compute_spectral_stats(self, signal: np.ndarray) -> Dict[str, float]:
-        """
-        Compute spectral statistics.
-        
-        Args:
-            signal: Input signal
-            
-        Returns:
-            Dictionary of spectral features
-        """
+        """Compute spectral statistics."""
         # FFT
         fft = np.fft.rfft(signal * np.hanning(len(signal)))
         magnitude = np.abs(fft)
         power = magnitude ** 2
         freqs = np.fft.rfftfreq(len(signal), 1/self.sample_rate)
         
-        # Spectral centroid (already have, but recompute for consistency)
+        # Spectral centroid
         if np.sum(magnitude) > 0:
             centroid = np.sum(freqs * magnitude) / np.sum(magnitude)
         else:
@@ -162,19 +154,7 @@ class EventStatsExtractor:
                               envelope_width: float,
                               spectral_centroid: float,
                               high_low_ratio: float) -> float:
-        """
-        Compute overall quality score for event.
-        
-        Args:
-            peak_factor: Peak factor (dB)
-            energy_ratio: Short/long energy ratio
-            envelope_width: Envelope width (ms)
-            spectral_centroid: Spectral centroid (Hz)
-            high_low_ratio: High/low frequency ratio
-            
-        Returns:
-            Quality score (0-1)
-        """
+        """Compute overall quality score for event."""
         # Peak factor contribution (target: 10-30 dB)
         pf_score = np.clip((peak_factor - 10) / 20, 0, 1)
         
@@ -201,7 +181,7 @@ class EventStatsExtractor:
         )
         
         return quality
-        
+
 
 def save_event_stats_csv(stats_list: List[Dict[str, Any]],
                         output_path: Path) -> None:
@@ -224,3 +204,7 @@ def save_event_stats_csv(stats_list: List[Dict[str, Any]],
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(stats_list)
+
+
+# 向后兼容别名
+EventStatsExtractor = EnhancedEventStatsExtractor

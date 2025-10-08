@@ -1,0 +1,36 @@
+# WAV 文件评估配置
+
+# 数据路径
+data:
+  positive_dir: data/test_resampled  # 包含 dolphin clicks 的文件
+  negative_dir: data/noise_resampled  # 纯噪音文件
+
+# 窗口提取参数
+windowing:
+  window_ms: 200.0      # 窗口大小(毫秒)
+  stride_ms: 50.0       # 滑动步长(毫秒)
+  sample_rate: 44100    # 采样率
+
+# 判定阈值
+thresholds:
+  window_threshold: 0.5      # 单个窗口被判定为 click 的概率阈值
+  min_positive_ratio: 0.1    # 文件中至少多少比例的窗口为正才判定文件为正
+  
+# 可选的多级阈值策略
+adaptive_thresholds:
+  # 如果文件中有任何窗口 > high_confidence, 直接判定为正
+  high_confidence: 0.95
+  # 如果平均概率 > medium_confidence, 判定为正
+  medium_confidence: 0.6
+  # 否则使用 min_positive_ratio 策略
+
+# 推理设置
+inference:
+  batch_size: 32
+  device: cpu  # 或 'cuda'
+  
+# 输出设置
+output:
+  save_window_predictions: true   # 是否保存每个窗口的预测
+  save_misclassified_files: true  # 是否单独保存误分类文件列表
+  generate_plots: true             # 是否生成可视化图表

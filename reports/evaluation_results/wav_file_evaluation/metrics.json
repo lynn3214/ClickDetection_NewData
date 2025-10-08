@@ -1,0 +1,22 @@
+{
+  "true_positives": 176,
+  "false_positives": 27,
+  "false_negatives": 1,
+  "true_negatives": 98,
+  "precision": 0.8669950738916257,
+  "recall": 0.9943502824858758,
+  "f1_score": 0.9263157894736844,
+  "accuracy": 0.9072847682119205,
+  "roc_auc": 0.9954802259887007,
+  "pr_auc": 0.997228459820978,
+  "metadata": {
+    "checkpoint": "checkpoints/best_model.pt",
+    "positive_dir": "data/test_resampled",
+    "negative_dir": "data/test_noise_segments",
+    "file_threshold": 0.5,
+    "min_positive_ratio": 0.1,
+    "total_files": 302,
+    "positive_files": 177,
+    "negative_files": 125
+  }
+}

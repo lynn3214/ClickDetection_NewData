@@ -1,6 +1,6 @@
 """
-Dataset construction for 0.2s training samples.
-Handles positive samples from detected clicks and negative samples from noise.
+Dataset construction for 0.12s training samples (优化版).
+直接使用120ms的click片段，无需padding到200ms。
 """
 
 import numpy as np
@@ -15,22 +15,22 @@ from detection.candidate_finder.dynamic_threshold import ClickCandidate
 
 
 class DatasetBuilder:
-    """Builds 0.2s training samples from detected clicks and noise."""
+    """构建120ms训练样本（从120ms片段）。"""
     
     def __init__(self,
                  sample_rate: int = 44100,
-                 window_ms: float = 200.0,
-                 random_offset_ms: float = 20.0):
+                 window_ms: float = 120.0,  # 改为120ms
+                 random_offset_ms: float = 10.0):
         """
         Initialize dataset builder.
         
         Args:
             sample_rate: Sample rate (Hz)
-            window_ms: Window duration for samples (ms)
+            window_ms: Window duration for samples (ms) - 改为120ms
             random_offset_ms: Random time offset range (ms)
         """
         self.sample_rate = sample_rate
-        self.window_samples = int(window_ms * sample_rate / 1000)
+        self.window_samples = int(window_ms * sample_rate / 1000)  # 5292样本
         self.offset_samples = int(random_offset_ms * sample_rate / 1000)
         
     def build_positive_samples(self,
@@ -262,6 +262,7 @@ class DatasetBuilder:
             json.dump(metadata, f, indent=2)
             
         print(f"Saved {len(samples)} samples to {split_dir}")
+        print(f"  Sample shape: {waveforms.shape}")
         print(f"  Positive: {np.sum(labels == 1)}")
         print(f"  Negative: {np.sum(labels == 0)}")
         
