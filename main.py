@@ -316,15 +316,13 @@ def cmd_trains(args):
 
 
 def cmd_build_dataset(args):
-<<<<<<< Updated upstream
-    """Execute build-dataset command."""
-=======
-    """Execute build-dataset command (优化版 - 120ms输入)."""
->>>>>>> Stashed changes
+    """Execute build-dataset command (优化版 - 120ms输入 + SNR混合增强)."""
     logger = ProjectLogger()
     config = load_config(args.config)
     
-    logger.info("Building training dataset (120ms samples)")
+    logger.info("=" * 60)
+    logger.info("Building training dataset (120ms samples with SNR augmentation)")
+    logger.info("=" * 60)
     
     # Initialize dataset builder
     dataset_config = config['dataset']
@@ -342,80 +340,75 @@ def cmd_build_dataset(args):
         random_offset_ms=dataset_config['random_offset_ms']
     )
     
+    # 初始化数据增强管道
+    augmentation_config = config.get('augmentation', {})
+    augmenter = AugmentationPipeline(
+        sample_rate=sample_rate,
+        snr_range=tuple(augmentation_config.get('snr_range', [-5, 5])),
+        time_shift_ms=augmentation_config.get('time_shift_ms', 10.0),
+        amplitude_range=tuple(augmentation_config.get('amplitude_range', [0.8, 1.25])),
+        apply_prob=augmentation_config.get('apply_prob', 0.8)
+    )
+    
+    logger.info(f"\nAugmentation settings:")
+    logger.info(f"  SNR range: {augmenter.snr_range} dB")
+    logger.info(f"  Time shift: ±{augmentation_config.get('time_shift_ms', 10.0)} ms")
+    logger.info(f"  Amplitude range: {augmenter.amplitude_range}")
+    logger.info(f"  Apply probability: {augmenter.apply_prob}")
+    
     events_dir = Path(args.events_dir)
     noise_dir = Path(args.noise_dir)
     output_dir = Path(args.output_dir)
     
+    # ========== 先加载噪音文件池（用于SNR混合）==========
+    logger.info(f"\nLoading noise files from {noise_dir}")
+    noise_files = list(noise_dir.rglob('*.wav'))
+    
+    if not noise_files:
+        logger.error(f"No noise files found in {noise_dir}")
+        return
+    
+    logger.info(f"Found {len(noise_files)} noise files")
+    
+    # 加载噪音到内存（限制数量避免内存溢出）
+    max_noise_files = min(len(noise_files), 100)  # 最多加载100个噪音文件
+    noise_pool = []
+    
+    from tqdm import tqdm
+    import random
+    
+    # 随机选择噪音文件
+    selected_noise_files = random.sample(noise_files, max_noise_files)
+    
+    for noise_file in tqdm(selected_noise_files, desc="Loading noise pool"):
+        try:
+            noise_audio, sr = sf.read(noise_file)
+            
+            if sr != sample_rate:
+                import librosa
+                noise_audio = librosa.resample(noise_audio, orig_sr=sr, target_sr=sample_rate)
+            
+            # 确保单声道
+            if noise_audio.ndim == 2:
+                noise_audio = noise_audio.mean(axis=1)
+            
+            noise_pool.append(noise_audio)
+            
+        except Exception as e:
+            logger.error(f"Error loading noise {noise_file}: {e}")
+            continue
+    
+    logger.info(f"Loaded {len(noise_pool)} noise files for augmentation")
+    
+    if len(noise_pool) == 0:
+        logger.error("Failed to load any noise files! Cannot apply SNR augmentation.")
+        return
+    
     all_positive_samples = []
     all_negative_samples = []
     
-<<<<<<< Updated upstream
-    # Process positive samples (from detected events)
-    logger.info(f"Processing positive samples from {events_dir}")
-    
-    # Method 1: If events are saved as individual wav files
-    event_audio_files = list(events_dir.rglob('*.wav'))
-    if event_audio_files:
-        logger.info(f"Found {len(event_audio_files)} event audio files")
-        for audio_file in event_audio_files:
-            try:
-                audio, sr = sf.read(audio_file)
-                if sr != sample_rate:
-                    audio = librosa.resample(audio, orig_sr=sr, target_sr=sample_rate)
-                
-                # Assume click is centered, create 0.2s window
-                file_id = audio_file.stem
-                positive_sample = builder._extract_centered_window(
-                    audio, 
-                    peak_idx=len(audio)//2  # Assume center
-                )
-                
-                all_positive_samples.append({
-                    'waveform': positive_sample,
-                    'label': 1,
-                    'file_id': file_id
-                })
-            except Exception as e:
-                logger.error(f"Error processing {audio_file}: {e}")
-                continue
-    
-    # Method 2: If events.csv exists with full audio
-    events_csv = events_dir / 'all_events.csv'
-    if events_csv.exists() and not event_audio_files:
-        logger.info(f"Building from events CSV: {events_csv}")
-        import pandas as pd
-        events_df = pd.read_csv(events_csv)
-        
-        # Group by source file
-        for source_file in events_df['source_file'].unique():
-            try:
-                audio, sr = sf.read(source_file)
-                if sr != sample_rate:
-                    audio = librosa.resample(audio, orig_sr=sr, target_sr=sample_rate)
-                
-                file_events = events_df[events_df['source_file'] == source_file]
-                file_id = Path(source_file).stem
-                
-                for _, event in file_events.iterrows():
-                    peak_idx = int(event['peak_idx'])
-                    window = builder._extract_centered_window(audio, peak_idx)
-                    
-                    if window is not None:
-                        all_positive_samples.append({
-                            'waveform': window,
-                            'label': 1,
-                            'file_id': file_id
-                        })
-            except Exception as e:
-                logger.error(f"Error processing {source_file}: {e}")
-                continue
-    
-    logger.info(f"Collected {len(all_positive_samples)} positive samples")
-    
-    # Process negative samples (from noise)
-=======
-    # ========== 处理正样本（应该已经是120ms的片段）==========
-    logger.info(f"Processing positive samples from {events_dir}")
+    # ========== 处理正样本（120ms片段 + SNR混合增强）==========
+    logger.info(f"\nProcessing positive samples from {events_dir}")
     
     positive_files = list(events_dir.rglob('*.wav'))
     
@@ -425,9 +418,11 @@ def cmd_build_dataset(args):
     
     logger.info(f"Found {len(positive_files)} positive audio files")
     
-    from tqdm import tqdm
-    for audio_file in tqdm(positive_files, desc="Loading positive samples"):
+    n_augmented = 0  # 统计增强样本数量
+    
+    for audio_file in tqdm(positive_files, desc="Processing positive samples"):
         try:
+            # 读取原始click片段
             audio, sr = sf.read(audio_file)
             
             if sr != sample_rate:
@@ -438,12 +433,8 @@ def cmd_build_dataset(args):
             if audio.ndim == 2:
                 audio = audio.mean(axis=1)
             
-            # 验证长度
+            # 验证和调整长度
             if len(audio) != expected_length:
-                logger.warning(
-                    f"{audio_file.name}: length {len(audio)} != expected {expected_length}"
-                )
-                # 调整长度
                 if len(audio) < expected_length:
                     # Pad
                     pad_length = expected_length - len(audio)
@@ -453,12 +444,29 @@ def cmd_build_dataset(args):
                     start = (len(audio) - expected_length) // 2
                     audio = audio[start:start + expected_length]
             
+            # === 关键步骤：应用SNR混合增强 ===
+            # 随机选择一个噪音
+            noise = random.choice(noise_pool)
+            
+            # 随机决定是否应用增强
+            if random.random() < augmenter.apply_prob:
+                # 应用SNR混合（在 snr_range 内随机选择SNR）
+                augmented_audio = augmenter.snr_mix(
+                    signal=audio,
+                    noise=noise,
+                    target_snr=None  # None表示在snr_range内随机
+                )
+                n_augmented += 1
+            else:
+                # 不增强，使用原始音频
+                augmented_audio = audio.copy()
+            
             # 标准化
-            audio = builder._normalize_segment(audio)
+            augmented_audio = builder._normalize_segment(augmented_audio)
             
             file_id = audio_file.stem
             all_positive_samples.append({
-                'waveform': audio,
+                'waveform': augmented_audio,
                 'label': 1,
                 'file_id': file_id
             })
@@ -467,18 +475,13 @@ def cmd_build_dataset(args):
             logger.error(f"Error processing {audio_file}: {e}")
             continue
     
-    logger.info(f"Collected {len(all_positive_samples)} positive samples")
+    logger.info(f"\nPositive samples summary:")
+    logger.info(f"  Total collected: {len(all_positive_samples)}")
+    logger.info(f"  SNR augmented: {n_augmented} ({n_augmented/len(all_positive_samples)*100:.1f}%)")
     
     # ========== 处理负样本（从noise随机采样120ms）==========
->>>>>>> Stashed changes
-    logger.info(f"Processing negative samples from {noise_dir}")
-    noise_files = list(noise_dir.rglob('*.wav'))
+    logger.info(f"\nProcessing negative samples from {noise_dir}")
     
-    n_negative_per_file = max(1, len(all_positive_samples) // max(1, len(noise_files)))
-    
-<<<<<<< Updated upstream
-    for noise_file in noise_files:
-=======
     # 计算需要多少负样本
     balance_ratio = dataset_config.get('balance_ratio', 1.0)
     n_negative_target = int(len(all_positive_samples) * balance_ratio)
@@ -487,12 +490,16 @@ def cmd_build_dataset(args):
     logger.info(f"Target negative samples: {n_negative_target}")
     logger.info(f"Samples per noise file: {n_negative_per_file}")
     
-    for noise_file in tqdm(noise_files, desc="Loading negative samples"):
->>>>>>> Stashed changes
+    for noise_file in tqdm(noise_files, desc="Processing negative samples"):
         try:
             audio, sr = sf.read(noise_file)
+            
             if sr != sample_rate:
+                import librosa
                 audio = librosa.resample(audio, orig_sr=sr, target_sr=sample_rate)
+            
+            if audio.ndim == 2:
+                audio = audio.mean(axis=1)
             
             file_id = noise_file.stem
             negative_samples = builder.build_negative_samples(
@@ -506,7 +513,8 @@ def cmd_build_dataset(args):
     
     logger.info(f"Collected {len(all_negative_samples)} negative samples")
     
-    # Combine and balance
+    # ========== 合并和平衡数据集 ==========
+    logger.info(f"\nBalancing dataset...")
     all_samples = all_positive_samples + all_negative_samples
     
     if not all_samples:
@@ -520,15 +528,20 @@ def cmd_build_dataset(args):
     
     logger.info(f"Total balanced samples: {len(balanced_samples)}")
     
-<<<<<<< Updated upstream
-    # Split into train/val
-=======
     # 验证样本形状
     sample_lengths = [len(s['waveform']) for s in balanced_samples[:10]]
     logger.info(f"Sample lengths (first 10): {sample_lengths}")
     
+    # 统计正负样本数量
+    n_positive = sum(1 for s in balanced_samples if s['label'] == 1)
+    n_negative = sum(1 for s in balanced_samples if s['label'] == 0)
+    logger.info(f"Final dataset composition:")
+    logger.info(f"  Positive: {n_positive}")
+    logger.info(f"  Negative: {n_negative}")
+    logger.info(f"  Ratio (pos:neg): 1:{n_negative/n_positive:.2f}")
+    
     # ========== 划分训练集/验证集 ==========
->>>>>>> Stashed changes
+    logger.info(f"\nSplitting into train/val sets...")
     val_split = dataset_config.get('val_split', 0.2)
     n_val = int(len(balanced_samples) * val_split)
     
@@ -541,14 +554,23 @@ def cmd_build_dataset(args):
     logger.info(f"Train samples: {len(train_samples)}")
     logger.info(f"Val samples: {len(val_samples)}")
     
-    # Save dataset
+    # ========== 保存数据集 ==========
+    logger.info(f"\nSaving dataset to {output_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
+    
     builder.save_dataset(train_samples, output_dir, split='train')
     builder.save_dataset(val_samples, output_dir, split='val')
     
-    logger.info("Dataset building completed")
+    # ========== 总结 ==========
+    logger.info("\n" + "=" * 60)
+    logger.info("Dataset building completed successfully!")
+    logger.info("=" * 60)
     logger.info(f"Dataset saved to: {output_dir}")
     logger.info(f"Window duration: {window_ms}ms ({expected_length} samples)")
+    logger.info(f"SNR augmentation: {n_augmented}/{len(all_positive_samples)} positive samples")
+    logger.info(f"SNR range: {augmenter.snr_range} dB")
+    logger.info(f"Train/Val split: {len(train_samples)}/{len(val_samples)}")
+    logger.info("=" * 60)
 
 
 def cmd_train(args):
