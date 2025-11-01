@@ -8,6 +8,8 @@ from sklearn.metrics import (
     confusion_matrix, classification_report, f1_score
 )
 from typing import Dict, Tuple, Optional
+import matplotlib
+matplotlib.use('Agg')  # 非GUI后端
 import matplotlib.pyplot as plt
 from pathlib import Path
 
@@ -42,10 +44,10 @@ class ModelEvaluator:
         tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
         
         metrics['confusion_matrix'] = cm
-        metrics['true_positives'] = int(tp)
-        metrics['false_positives'] = int(fp)
-        metrics['false_negatives'] = int(fn)
-        metrics['true_negatives'] = int(tn)
+        metrics['tp'] = int(tp)
+        metrics['fp'] = int(fp)
+        metrics['fn'] = int(fn)
+        metrics['tn'] = int(tn)
         
         # Precision, Recall, F1
         precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
@@ -88,61 +90,10 @@ class ModelEvaluator:
         self.metrics = metrics
         return metrics
         
-    def find_optimal_threshold(self,
-                              y_true: np.ndarray,
-                              y_proba: np.ndarray,
-                              metric: str = 'f1') -> Tuple[float, float]:
-        """
-        Find optimal classification threshold.
-        
-        Args:
-            y_true: True labels
-            y_proba: Prediction probabilities for positive class
-            metric: Metric to optimize ('f1', 'recall', 'precision')
-            
-        Returns:
-            Tuple of (optimal_threshold, metric_value)
-        """
-        thresholds = np.linspace(0, 1, 101)
-        scores = []
-        
-        for threshold in thresholds:
-            y_pred = (y_proba >= threshold).astype(int)
-            
-            if metric == 'f1':
-                score = f1_score(y_true, y_pred, zero_division=0)
-            elif metric == 'recall':
-                cm = confusion_matrix(y_true, y_pred)
-                tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
-                score = tp / (tp + fn) if (tp + fn) > 0 else 0
-            elif metric == 'precision':
-                cm = confusion_matrix(y_true, y_pred)
-                tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
-                score = tp / (tp + fp) if (tp + fp) > 0 else 0
-            else:
-                raise ValueError(f"Unknown metric: {metric}")
-                
-            scores.append(score)
-            
-        optimal_idx = np.argmax(scores)
-        optimal_threshold = thresholds[optimal_idx]
-        optimal_score = scores[optimal_idx]
-        
-        return optimal_threshold, optimal_score
-        
     def plot_confusion_matrix(self,
                              save_path: Optional[Path] = None,
                              class_names: list = None) -> plt.Figure:
-        """
-        Plot confusion matrix.
-        
-        Args:
-            save_path: Path to save figure
-            class_names: List of class names
-            
-        Returns:
-            Matplotlib figure
-        """
+        """Plot confusion matrix."""
         if 'confusion_matrix' not in self.metrics:
             raise ValueError("Metrics not computed yet")
             
@@ -163,7 +114,6 @@ class ModelEvaluator:
                ylabel='True label',
                xlabel='Predicted label')
         
-        # Add text annotations
         thresh = cm.max() / 2.
         for i in range(cm.shape[0]):
             for j in range(cm.shape[1]):
@@ -175,19 +125,12 @@ class ModelEvaluator:
         
         if save_path:
             fig.savefig(save_path, dpi=150, bbox_inches='tight')
+            plt.close(fig)
             
         return fig
         
     def plot_roc_curve(self, save_path: Optional[Path] = None) -> plt.Figure:
-        """
-        Plot ROC curve.
-        
-        Args:
-            save_path: Path to save figure
-            
-        Returns:
-            Matplotlib figure
-        """
+        """Plot ROC curve."""
         if 'roc_fpr' not in self.metrics:
             raise ValueError("ROC metrics not computed")
             
@@ -208,19 +151,12 @@ class ModelEvaluator:
         
         if save_path:
             fig.savefig(save_path, dpi=150, bbox_inches='tight')
+            plt.close(fig)
             
         return fig
         
     def plot_pr_curve(self, save_path: Optional[Path] = None) -> plt.Figure:
-        """
-        Plot Precision-Recall curve.
-        
-        Args:
-            save_path: Path to save figure
-            
-        Returns:
-            Matplotlib figure
-        """
+        """Plot Precision-Recall curve."""
         if 'pr_precision' not in self.metrics:
             raise ValueError("PR metrics not computed")
             
@@ -240,68 +176,64 @@ class ModelEvaluator:
         
         if save_path:
             fig.savefig(save_path, dpi=150, bbox_inches='tight')
+            plt.close(fig)
             
         return fig
+
+
+# ⚠️ 新增: 兼容 inference.py 的函数接口
+def compute_metrics(y_true: np.ndarray,
+                   y_pred: np.ndarray,
+                   y_proba: Optional[np.ndarray] = None) -> Dict:
+    """
+    Wrapper function for computing metrics (compatible with inference.py).
+    
+    Args:
+        y_true: True labels
+        y_pred: Predicted labels
+        y_proba: Prediction probabilities
         
-    def plot_threshold_analysis(self,
-                               y_true: np.ndarray,
-                               y_proba: np.ndarray,
-                               save_path: Optional[Path] = None) -> plt.Figure:
-        """
-        Plot how metrics vary with threshold.
-        
-        Args:
-            y_true: True labels
-            y_proba: Prediction probabilities
-            save_path: Path to save figure
-            
-        Returns:
-            Matplotlib figure
-        """
-        thresholds = np.linspace(0, 1, 101)
-        precisions = []
-        recalls = []
-        f1_scores = []
-        
-        for threshold in thresholds:
-            y_pred = (y_proba >= threshold).astype(int)
-            cm = confusion_matrix(y_true, y_pred)
-            
-            if cm.size == 4:
-                tn, fp, fn, tp = cm.ravel()
-                
-                precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-                recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-                f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
-                
-                precisions.append(precision)
-                recalls.append(recall)
-                f1_scores.append(f1)
-            else:
-                precisions.append(0)
-                recalls.append(0)
-                f1_scores.append(0)
-                
-        fig, ax = plt.subplots(figsize=(10, 6))
-        
-        ax.plot(thresholds, precisions, label='Precision', linewidth=2)
-        ax.plot(thresholds, recalls, label='Recall', linewidth=2)
-        ax.plot(thresholds, f1_scores, label='F1 Score', linewidth=2)
-        
-        # Mark optimal F1 threshold
-        optimal_idx = np.argmax(f1_scores)
-        ax.axvline(thresholds[optimal_idx], color='red', linestyle='--',
-                  label=f'Optimal threshold = {thresholds[optimal_idx]:.2f}')
-        
-        ax.set_xlabel('Threshold')
-        ax.set_ylabel('Score')
-        ax.set_title('Metrics vs Threshold')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        
-        fig.tight_layout()
-        
-        if save_path:
-            fig.savefig(save_path, dpi=150, bbox_inches='tight')
-            
-        return fig
+    Returns:
+        Dictionary of metrics
+    """
+    evaluator = ModelEvaluator()
+    return evaluator.compute_metrics(y_true, y_pred, y_proba)
+
+
+def plot_results(metrics: Dict,
+                y_true: np.ndarray,
+                y_pred: np.ndarray,
+                y_proba: np.ndarray,
+                output_dir: Path) -> None:
+    """
+    Generate and save all evaluation plots.
+    
+    Args:
+        metrics: Metrics dictionary
+        y_true: True labels
+        y_pred: Predicted labels
+        y_proba: Prediction probabilities
+        output_dir: Output directory
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    evaluator = ModelEvaluator()
+    evaluator.metrics = metrics
+    
+    # Confusion matrix
+    evaluator.plot_confusion_matrix(
+        save_path=output_dir / 'confusion_matrix.png'
+    )
+    
+    # ROC curve
+    if 'roc_fpr' in metrics:
+        evaluator.plot_roc_curve(
+            save_path=output_dir / 'roc_curve.png'
+        )
+    
+    # PR curve
+    if 'pr_precision' in metrics:
+        evaluator.plot_pr_curve(
+            save_path=output_dir / 'pr_curve.png'
+        )

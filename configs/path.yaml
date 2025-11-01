@@ -2,10 +2,14 @@
 
 data:
   raw_dir: data/raw
+  training_sources: data/raw/training_sources  # 新增
+  test_raw: data/test_raw                      # 新增
   training_resampled: data/training_resampled
   test_resampled: data/test_resampled
   noise_resampled: data/noise_resampled
-  snippets: data/snippets
+  augmented_clicks: data/augmented_clicks      # 新增
+  noise_segments: data/noise_segments          # 新增
+  training_segs: data/training_segs            # 新增
 
 preprocessing:
   scan_manifest: data/preprocessing/scan_manifest

@@ -33,7 +33,7 @@ class ProjectLogger:
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(level)
         console_formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            '%(asctime)s - %(levelname)s - %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
         )
         console_handler.setFormatter(console_formatter)
@@ -50,7 +50,7 @@ class ProjectLogger:
             file_handler = logging.FileHandler(log_file)
             file_handler.setLevel(level)
             file_formatter = logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                '%(asctime)s - %(levelname)s - %(message)s',
                 datefmt='%Y-%m-%d %H:%M:%S'
             )
             file_handler.setFormatter(file_formatter)
@@ -77,7 +77,25 @@ class ProjectLogger:
     def critical(self, message: str):
         """Log critical message."""
         self.logger.critical(message)
+
+
+# ⚠️ 新增: 兼容 inference.py 的函数接口
+def setup_logger(name: str = "DolphinClickDetection",
+                log_dir: Optional[Path] = None,
+                level: int = logging.INFO) -> ProjectLogger:
+    """
+    Setup and return a project logger (wrapper function).
+    
+    Args:
+        name: Logger name
+        log_dir: Optional directory for log files
+        level: Logging level
         
+    Returns:
+        ProjectLogger instance
+    """
+    return ProjectLogger(name=name, log_dir=log_dir, level=level)
+
 
 class ProgressTracker:
     """Progress tracking with tqdm."""

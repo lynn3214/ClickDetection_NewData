@@ -1,0 +1,20 @@
+============================================================
+EVALUATION METRICS
+============================================================
+
+Metadata:
+  checkpoint: models/v1.0/best_model.pt
+  dataset: data/training_dataset/val
+
+Classification Metrics:
+  Accuracy:  0.9923
+  Precision: 1.0000
+  Recall:    0.9847
+  F1 Score:  0.9923
+
+  ROC AUC:   1.0000
+  PR AUC:    1.0000
+
+Confusion Matrix:
+  TN: 522    FP: 0
+  FN: 8      TP: 514

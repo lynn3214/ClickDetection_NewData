@@ -1,4 +1,4 @@
-# Training configuration (优化版 - 120ms输入 + 轻量级模型)
+# Training configuration (优化版 - 120ms输入 + Click Train序列)
 
 # Sample rate
 sample_rate: 44100
@@ -6,7 +6,7 @@ sample_rate: 44100
 # Model architecture
 model:
   use_lightweight: true  # 使用轻量级模型
-  input_length: 5292     # 0.12s at 44.1kHz (120ms)
+  input_length: 22050    # 0.5s at 44.1kHz (500ms，统一长度)
   num_classes: 2
   base_channels: 16      # 轻量级: 16 (原版: 32)
   num_blocks: 3          # 轻量级: 3  (原版: 4)
@@ -22,18 +22,35 @@ training:
   
 # Data augmentation
 augmentation:
-  snr_range: [-5, 5]  # dB
+  snr_range: [-5, 15]  # dB
   time_shift_ms: 10.0
   amplitude_range: [0.8, 1.25]
   apply_prob: 0.8
   
 # Dataset construction
 dataset:
-  window_ms: 120.0           # 改为120ms (原200ms)
+  window_ms: 120.0           # 单click片段长度（120ms）
   random_offset_ms: 10.0
   balance_ratio: 1.0         # negative/positive ratio
   val_split: 0.2
   
+  # ========== 新增：Click Train序列配置 ==========
+  click_train:
+    enable: true             # 是否启用Click Train生成
+    #train_ratio: 0.3         # Train样本占正样本的比例（0.3 = 30%）
+    n_samples: 8000           # 直接指定生成多少个train样本
+    val_samples: 2000        # 验证集样本数 (新增)
+    train_length_ms: 500.0   # Train序列长度（毫秒）
+    min_clicks: 2            # 最少click数
+    max_clicks: 5            # 最多click数
+    ici_range_ms: [10.0, 80.0]  # ICI范围（毫秒）
+    
+  # 说明：
+  # - n_samples: 生成2000个click train作为正样本
+  # - 每个train长度500ms，包含2-5个click
+  # - 所有train都会叠加500ms的持续背景噪音
+  # - 不再单独处理单个click片段
+
 # Device
 device: cpu  # or 'cuda'
 

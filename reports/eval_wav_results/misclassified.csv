@@ -1,0 +1,160 @@
+file_path,true_label,predicted_label,confidence,correct
+data/test_detection_results/audio/SL-SE_20210127_24_part2/click_0000_00000124ms.wav,1,0,0.083969645,False
+data/test_detection_results/audio/SL-SE_20210127_24_part2/click_0000_00000052ms.wav,1,0,0.26552573,False
+data/test_detection_results/audio/click_RL-W_20210323_89/click_0001_00000904ms.wav,1,0,0.004166432,False
+data/test_detection_results/audio/click_RL-W_20210323_73/click_0003_00000283ms.wav,1,0,0.0011645833,False
+data/test_detection_results/audio/click_RL-W_20210323_73/click_0000_00000223ms.wav,1,0,0.00029471284,False
+data/test_detection_results/audio/click_RL-W_20210323_73/click_0002_00000266ms.wav,1,0,0.00045366157,False
+data/test_detection_results/audio/click_RL-W_20210323_73/click_0004_00000314ms.wav,1,0,0.012782381,False
+data/test_detection_results/audio/click_RL-W_20210323_73/click_0001_00000248ms.wav,1,0,0.000353522,False
+data/test_detection_results/audio/click_SL-SE 20210127-45/click_0012_00000431ms.wav,1,0,0.1243409,False
+data/test_detection_results/audio/click_SL-SE 20210127-45/click_0005_00000204ms.wav,1,0,0.022623597,False
+data/test_detection_results/audio/click_SL-SE 20210127-45/click_0008_00000284ms.wav,1,0,0.0070747966,False
+data/test_detection_results/audio/click_SL-SE 20210127-45/click_0013_00000448ms.wav,1,0,0.19455709,False
+data/test_detection_results/audio/click_SL-SE 20210127-45/click_0006_00000219ms.wav,1,0,0.028057853,False
+data/test_detection_results/audio/click_SL-SE 20210127-45/click_0001_00000080ms.wav,1,0,0.005605378,False
+data/test_detection_results/audio/click_SL-SE 20210127-45/click_0003_00000150ms.wav,1,0,0.044342317,False
+data/test_detection_results/audio/click_SL-SE 20210127-45/click_0007_00000231ms.wav,1,0,0.021004232,False
+data/test_detection_results/audio/click_SL-SE 20210127-45/click_0011_00000419ms.wav,1,0,0.17850892,False
+data/test_detection_results/audio/click_SL-SE 20210127-45/click_0004_00000174ms.wav,1,0,0.028969213,False
+data/test_detection_results/audio/click_SL-SE 20210127-45/click_0002_00000095ms.wav,1,0,0.014122725,False
+data/test_detection_results/audio/click_SL-SE 20210127-45/click_0010_00000354ms.wav,1,0,0.061156847,False
+data/test_detection_results/audio/click_SL-SE 20210127-45/click_0000_00000050ms.wav,1,0,0.093361124,False
+data/test_detection_results/audio/click_SL-SE 20210127-45/click_0009_00000297ms.wav,1,0,0.015899705,False
+data/test_detection_results/audio/7/click_0039_00004043ms.wav,1,0,4.622162e-08,False
+data/test_detection_results/audio/7/click_0041_00004104ms.wav,1,0,1.3234048e-09,False
+data/test_detection_results/audio/7/click_0040_00004074ms.wav,1,0,1.9582769e-09,False
+data/test_detection_results/audio/6/click_0031_00003224ms.wav,1,0,4.00081e-05,False
+data/test_detection_results/audio/6/click_0032_00003256ms.wav,1,0,4.1409574e-05,False
+data/test_detection_results/audio/click_RL-W_20210323_74_part2/click_0005_00000917ms.wav,1,0,0.40381455,False
+data/test_detection_results/audio/36_whistle+click/click_0000_00000013ms.wav,1,0,1.2335552e-14,False
+data/test_detection_results/audio/RL-W_20210323T162419_57/click_0000_00000183ms.wav,1,0,0.07389005,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0002_00000650ms.wav,1,0,0.028649257,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0016_00000980ms.wav,1,0,4.147858e-05,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0001_00000629ms.wav,1,0,0.074030355,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0011_00000886ms.wav,1,0,0.00020225804,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0017_00000980ms.wav,1,0,4.1447613e-05,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0004_00000692ms.wav,1,0,0.010379151,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0005_00000709ms.wav,1,0,0.011627207,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0008_00000774ms.wav,1,0,0.0008765674,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0013_00000899ms.wav,1,0,9.310756e-05,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0012_00000886ms.wav,1,0,0.00020212289,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0006_00000733ms.wav,1,0,0.0034236442,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0012_00000899ms.wav,1,0,9.3223236e-05,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0014_00000957ms.wav,1,0,4.651878e-05,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0010_00000833ms.wav,1,0,0.00029620272,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0009_00000787ms.wav,1,0,0.0012748264,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0018_00000990ms.wav,1,0,4.1059135e-05,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0007_00000761ms.wav,1,0,0.002157465,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0016_00000970ms.wav,1,0,3.793155e-05,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0011_00000833ms.wav,1,0,0.0002960714,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0009_00000798ms.wav,1,0,0.0016805705,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0017_00000990ms.wav,1,0,4.1093914e-05,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0015_00000957ms.wav,1,0,4.649111e-05,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0013_00000928ms.wav,1,0,5.4469412e-05,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0010_00000798ms.wav,1,0,0.0016797953,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0003_00000681ms.wav,1,0,0.0233678,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0014_00000928ms.wav,1,0,5.4418895e-05,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1/click_0015_00000970ms.wav,1,0,3.795898e-05,False
+data/test_detection_results/audio/37/click_0000_00000081ms.wav,1,0,8.2051477e-10,False
+data/test_detection_results/audio/37/click_0001_00000164ms.wav,1,0,2.3829213e-07,False
+data/test_detection_results/audio/37/click_0002_00000266ms.wav,1,0,0.124446094,False
+data/test_detection_results/audio/39/click_0001_00000063ms.wav,1,0,0.13433874,False
+data/test_detection_results/audio/39/click_0002_00000103ms.wav,1,0,0.26847526,False
+data/test_detection_results/audio/39/click_0000_00000049ms.wav,1,0,0.26347083,False
+data/test_detection_results/audio/RL-W_20210323T162419_213/click_0003_00000813ms.wav,1,0,0.22826657,False
+data/test_detection_results/audio/RL-W_20210323T162419_213/click_0002_00000542ms.wav,1,0,0.3785264,False
+data/test_detection_results/audio/click_SL-SE 20210127-24-highres/click_0002_00000650ms.wav,1,0,0.028632551,False
+data/test_detection_results/audio/click_SL-SE 20210127-24-highres/click_0001_00000629ms.wav,1,0,0.07398209,False
+data/test_detection_results/audio/click_SL-SE 20210127-24-highres/click_0012_00000858ms.wav,1,0,0.0003514418,False
+data/test_detection_results/audio/click_SL-SE 20210127-24-highres/click_0004_00000692ms.wav,1,0,0.010371285,False
+data/test_detection_results/audio/click_SL-SE 20210127-24-highres/click_0005_00000709ms.wav,1,0,0.011620637,False
+data/test_detection_results/audio/click_SL-SE 20210127-24-highres/click_0008_00000774ms.wav,1,0,0.0012698337,False
+data/test_detection_results/audio/click_SL-SE 20210127-24-highres/click_0014_00000899ms.wav,1,0,0.0007065453,False
+data/test_detection_results/audio/click_SL-SE 20210127-24-highres/click_0013_00000886ms.wav,1,0,0.000554617,False
+data/test_detection_results/audio/click_SL-SE 20210127-24-highres/click_0006_00000733ms.wav,1,0,0.0034218517,False
+data/test_detection_results/audio/click_SL-SE 20210127-24-highres/click_0017_00000970ms.wav,1,0,0.0008022828,False
+data/test_detection_results/audio/click_SL-SE 20210127-24-highres/click_0009_00000787ms.wav,1,0,0.0008104955,False
+data/test_detection_results/audio/click_SL-SE 20210127-24-highres/click_0018_00000990ms.wav,1,0,0.0019940406,False
+data/test_detection_results/audio/click_SL-SE 20210127-24-highres/click_0019_00001013ms.wav,1,0,0.0025816774,False
+data/test_detection_results/audio/click_SL-SE 20210127-24-highres/click_0007_00000761ms.wav,1,0,0.0024205947,False
+data/test_detection_results/audio/click_SL-SE 20210127-24-highres/click_0011_00000833ms.wav,1,0,0.00073023536,False
+data/test_detection_results/audio/click_SL-SE 20210127-24-highres/click_0015_00000928ms.wav,1,0,0.0007035774,False
+data/test_detection_results/audio/click_SL-SE 20210127-24-highres/click_0010_00000798ms.wav,1,0,0.0005298478,False
+data/test_detection_results/audio/click_SL-SE 20210127-24-highres/click_0003_00000681ms.wav,1,0,0.023356982,False
+data/test_detection_results/audio/click_SL-SE 20210127-24-highres/click_0016_00000957ms.wav,1,0,0.0013823865,False
+data/test_detection_results/audio/RL-W_20210323T162419_212/click_0006_00001542ms.wav,1,0,0.34717333,False
+data/test_detection_results/audio/RL-W_20210323T162419_212/click_0007_00001813ms.wav,1,0,0.2120025,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1-2/click_0010_00000409ms.wav,1,0,0.0007428981,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1-2/click_0009_00000380ms.wav,1,0,0.00066917285,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1-2/click_0008_00000365ms.wav,1,0,0.00027716285,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1-2/click_0002_00000242ms.wav,1,0,0.0017037385,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1-2/click_0011_00000428ms.wav,1,0,0.00046348723,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1-2/click_0012_00000827ms.wav,1,0,0.4731022,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1-2/click_0005_00000305ms.wav,1,0,0.00102879,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1-2/click_0003_00000255ms.wav,1,0,0.002300016,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1-2/click_0007_00000348ms.wav,1,0,0.0005021179,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1-2/click_0004_00000274ms.wav,1,0,0.0008122343,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1-2/click_0001_00000210ms.wav,1,0,0.0061555067,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1-2/click_0000_00000192ms.wav,1,0,0.0050583733,False
+data/test_detection_results/audio/SL-SE_20210127_24_part1-2/click_0006_00000330ms.wav,1,0,0.00035364486,False
+data/test_detection_results/audio/RL-W_20210323T162419_209/click_0003_00001336ms.wav,1,0,0.48327366,False
+data/test_detection_results/audio/RL-W_20210323T162419_97/click_0003_00000771ms.wav,1,0,0.35502994,False
+data/noise_test_segs/purenoise_3_00510_seg0001.wav,0,1,0.99944264,False
+data/noise_test_segs/purenoise_5_00638_seg0000.wav,0,1,0.9999956,False
+data/noise_test_segs/purenoise_4_01064_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_3_01740_seg0001.wav,0,1,0.9999989,False
+data/noise_test_segs/purenoise_2_00367_seg0000.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_2_00407_seg0001.wav,0,1,0.99999857,False
+data/noise_test_segs/purenoise_5_01606_seg0001.wav,0,1,0.99725085,False
+data/noise_test_segs/purenoise_3_00670_seg0001.wav,0,1,0.9999989,False
+data/noise_test_segs/purenoise_3_00953_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_4_00663_seg0001.wav,0,1,0.99725085,False
+data/noise_test_segs/purenoise_5_00939_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_4_01282_seg0000.wav,0,1,0.9999987,False
+data/noise_test_segs/purenoise_2_01985_seg0001.wav,0,1,0.99944454,False
+data/noise_test_segs/purenoise_1_01565_seg0000.wav,0,1,0.9999815,False
+data/noise_test_segs/purenoise_1_01565_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_2_00631_seg0001.wav,0,1,0.9956434,False
+data/noise_test_segs/purenoise_1_01570_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_3_00955_seg0001.wav,0,1,0.98396885,False
+data/noise_test_segs/purenoise_4_01072_seg0001.wav,0,1,0.9767394,False
+data/noise_test_segs/purenoise_1_01067_seg0000.wav,0,1,0.9999993,False
+data/noise_test_segs/purenoise_1_00275_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_5_01100_seg0001.wav,0,1,0.9999989,False
+data/noise_test_segs/purenoise_2_01128_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_3_00585_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_1_01700_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_4_00098_seg0000.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_1_01880_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_3_00585_seg0000.wav,0,1,0.99995995,False
+data/noise_test_segs/purenoise_3_01830_seg0000.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_3_01174_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_2_01126_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_2_00306_seg0000.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_2_01126_seg0000.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_3_01830_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_2_00556_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_2_01969_seg0000.wav,0,1,0.99914014,False
+data/noise_test_segs/purenoise_3_01413_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_2_00556_seg0000.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_3_01703_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_1_01255_seg0000.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_1_00823_seg0000.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_1_01934_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_1_00370_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_1_01376_seg0000.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_2_01781_seg0000.wav,0,1,0.9999999,False
+data/noise_test_segs/purenoise_4_01802_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_5_01850_seg0000.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_2_01640_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_2_00125_seg0001.wav,0,1,0.9981184,False
+data/noise_test_segs/purenoise_3_01765_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_1_01840_seg0001.wav,0,1,0.9999989,False
+data/noise_test_segs/purenoise_2_00125_seg0000.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_2_00347_seg0001.wav,0,1,0.86724895,False
+data/noise_test_segs/purenoise_1_01387_seg0000.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_1_01766_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_4_00243_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_2_00596_seg0001.wav,0,1,1.0,False
+data/noise_test_segs/purenoise_2_01916_seg0001.wav,0,1,0.99999464,False

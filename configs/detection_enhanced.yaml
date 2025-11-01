@@ -15,31 +15,29 @@ features:
 
 # Adaptive thresholding
 thresholds:
-  tkeo_z: 6.0
-  ste_z: 6.0
-  hfc_z: 4.0
-  high_low_ratio: 1.2
-  spectral_centroid_min: 8500  # Hz
+  tkeo_z: 8.0           # 从6.0提高到8.0（更严格）
+  ste_z: 7.0            # 从6.0提高到7.0
+  hfc_z: 5.0            # 从4.0提高到5.0
+  high_low_ratio: 1.5   # 从1.2提高到1.5（更强调高频）
+  spectral_centroid_min: 10000  # 从8500提高到10000 Hz
   
 # Envelope constraints
 envelope:
-  width_min_ms: 0.2
-  width_max_ms: 1.8
+  width_min_ms: 0.3     # 从0.2改为0.3
+  width_max_ms: 1.0     # 从1.8改为1.0（更严格）
   db_threshold: -10
 
 # Refractory period
-refractory_ms: 1.5
+refractory_ms: 10.0   #从1.5增大到10ms，减少重复检测
 
 # Transient detection (新增)
 transient:
-  enable_filter: true  # 是否启用瞬态过滤
-  min_dolphin_likelihood: 0.3  # 最小海豚可能性阈值
-  analysis_window_ms: 20.0  # 瞬态分析窗口长度
-  # Shrimp特征阈值
-  shrimp_peak_sharpness_threshold: 20.0  # 峰值锐度阈值
-  shrimp_attack_time_threshold: 0.5  # 上升时间阈值(ms)
-  shrimp_energy_concentration_threshold: 0.95  # 能量集中度阈值
-
+  enable_filter: true
+  min_dolphin_likelihood: 0.5  # 从0.3提高到0.5（50%以上才接受）
+  analysis_window_ms: 20.0
+  shrimp_peak_sharpness_threshold: 15.0    # 从20降到15（更容易判定为shrimp）
+  shrimp_attack_time_threshold: 0.8        # 从0.5放宽到0.8ms
+  shrimp_energy_concentration_threshold: 0.90  # 从0.95降到0.90
 # Segmentation
 segmentation:
   pre_ms: 2.0

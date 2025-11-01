@@ -1,0 +1,1013 @@
+"""
+Main CLI entry point for dolphin click detection pipeline.
+Changes:
+1. Fix batch-detect logic for saving audio segments
+2. Fix build-dataset input paths and SNR mixing logic
+3. Add 'collect-clicks' command
+4. Add debug output and SNR validation
+"""
+
+import argparse
+from pathlib import Path
+import sys
+import shutil  
+from tqdm import tqdm 
+
+from utils.config import load_config
+from utils.logging.logger import ProjectLogger
+from utils.audio_io.manifest import scan_audio_files
+#from utils.preprocessing.resample_and_filter import preprocess_audio_file
+from detection.candidate_finder.dynamic_threshold import AdaptiveDetector, DetectionParams
+from detection.segmenter.cropper import ClickSegmenter
+from detection.features_event.event_stats import EventStatsExtractor, save_event_stats_csv
+from detection.train_builder.cluster import TrainBuilder, save_trains_csv
+from detection.fusion.decision import FusionDecider, FusionConfig
+from detection.export.writer import ExportWriter
+from training.dataset.segments import DatasetBuilder
+from training.augment.pipeline import AugmentationPipeline
+from models.cnn1d.model import create_model
+from models.cnn1d.inference import ClickDetectorInference
+from training.train.loop import Trainer, create_dataloaders
+from training.eval.report import EvaluationReporter
+
+import numpy as np
+import torch
+import soundfile as sf
+import pandas as pd
+
+
+def setup_argparse():
+    """Setup command line argument parser."""
+    parser = argparse.ArgumentParser(
+        description='Dolphin Click Detection Pipeline'
+    )
+    
+    subparsers = parser.add_subparsers(dest='command', help='Command to run')
+    
+    # Scan command
+    scan_parser = subparsers.add_parser('scan', help='Scan audio files')
+    scan_parser.add_argument('--input-dir', type=str, required=True,
+                            help='Input directory to scan')
+    scan_parser.add_argument('--output', type=str, required=True,
+                            help='Output manifest file')
+    
+    # Detect command
+    detect_parser = subparsers.add_parser('detect', help='Detect click candidates')
+    detect_parser.add_argument('--input', type=str, required=True,
+                              help='Input audio file')
+    detect_parser.add_argument('--output-dir', type=str, required=True,
+                              help='Output directory')
+    detect_parser.add_argument('--config', type=str, default='configs/detection.yaml',
+                              help='Detection config file')
+    
+    # ========== Added: collect-clicks command ==========
+    collect_parser = subparsers.add_parser(
+        'collect-clicks',
+        help='Collect all click segments into a single directory'
+    )
+    collect_parser.add_argument('--input', type=str, required=True,
+                               help='Input directory (detection_results/audio)')
+    collect_parser.add_argument('--output', type=str, required=True,
+                               help='Output directory for collected clicks')
+    collect_parser.add_argument('--verbose', '-v', action='store_true')
+    
+    # Batch detect command
+    batch_detect_parser = subparsers.add_parser(
+        'batch-detect', 
+        help='Batch detect clicks in directory'
+    )
+    batch_detect_parser.add_argument('--input-dir', type=str, required=True,
+                                    help='Input directory containing wav files')
+    batch_detect_parser.add_argument('--output-dir', type=str, required=True,
+                                    help='Output directory for results')
+    batch_detect_parser.add_argument('--config', type=str, default='configs/detection.yaml',
+                                    help='Detection config file')
+    batch_detect_parser.add_argument('--save-audio', action='store_true',
+                                    help='Save extracted click segments')
+    batch_detect_parser.add_argument('--recursive', action='store_true',
+                                    help='Search recursively for wav files')
+    batch_detect_parser.add_argument('--segment-ms', type=float, default=120.0,
+                                    help='Segment length in milliseconds (default: 120)')
+    
+    # Trains command
+    trains_parser = subparsers.add_parser('trains', help='Build click trains')
+    trains_parser.add_argument('--events-csv', type=str, required=True,
+                              help='Events CSV file')
+    trains_parser.add_argument('--output', type=str, required=True,
+                              help='Output trains CSV')
+    trains_parser.add_argument('--config', type=str, default='configs/detection.yaml',
+                              help='Detection config file')
+    
+    # ========== Modified: build-dataset update parameter descriptions ==========
+    dataset_parser = subparsers.add_parser('build-dataset',
+                                          help='Build training dataset with SNR mixing')
+    dataset_parser.add_argument('--events-dir', type=str, required=True,
+                               help='Directory containing click wav files (augmented_clicks)')
+    dataset_parser.add_argument('--noise-dir', type=str, required=True,
+                               help='Directory containing noise segments (noise_train_segs)')
+    dataset_parser.add_argument('--output-dir', type=str, required=True,
+                               help='Output dataset directory')
+    dataset_parser.add_argument('--config', type=str, default='configs/training.yaml',
+                               help='Training config file')
+    dataset_parser.add_argument('--save-wav', action='store_true',
+                               help='Save mixed samples as wav files for inspection')
+    dataset_parser.add_argument('--verbose', '-v', action='store_true')
+    
+    # Train command
+    train_parser = subparsers.add_parser('train', help='Train CNN model')
+    train_parser.add_argument('--dataset-dir', type=str, required=True,
+                             help='Dataset directory')
+    train_parser.add_argument('--output-dir', type=str, required=True,
+                             help='Output directory for checkpoints')
+    train_parser.add_argument('--config', type=str, default='configs/training.yaml',
+                             help='Training config file')
+    
+    # Eval command
+    eval_parser = subparsers.add_parser('eval', help='Evaluate model')
+    eval_parser.add_argument('--checkpoint', type=str, required=True,
+                            help='Model checkpoint path')
+    eval_parser.add_argument('--dataset-dir', type=str, required=True,
+                            help='Test dataset directory')
+    eval_parser.add_argument('--output-dir', type=str, required=True,
+                            help='Output directory for reports')
+
+    # Eval-wav command (新增)
+    eval_wav_parser = subparsers.add_parser(
+        'eval-wav', 
+        help='Evaluate model on wav files (file-level classification)'
+    )
+    eval_wav_parser.add_argument('--checkpoint', type=str, required=True,
+                                help='Model checkpoint path')
+    eval_wav_parser.add_argument('--positive-dir', type=str, 
+                                default='data/test_resampled',
+                                help='Directory with files containing clicks')
+    eval_wav_parser.add_argument('--negative-dir', type=str,
+                                default='data/noise_resampled',
+                                help='Directory with noise files')
+    eval_wav_parser.add_argument('--output-dir', type=str, required=True,
+                                help='Output directory for results')
+    eval_wav_parser.add_argument('--config', type=str, 
+                                default='configs/eval_wav.yaml',
+                                help='Evaluation config file')
+    eval_wav_parser.add_argument('--file-threshold', type=float,
+                                help='Window-level threshold (overrides config)')
+    eval_wav_parser.add_argument('--min-positive-ratio', type=float,
+                                help='Min positive ratio (overrides config)')
+    
+    # Export command
+    export_parser = subparsers.add_parser('export', help='Export final detections')
+    export_parser.add_argument('--input', type=str, required=True,
+                              help='Input audio file')
+    export_parser.add_argument('--checkpoint', type=str, required=True,
+                              help='Model checkpoint')
+    export_parser.add_argument('--output-dir', type=str, required=True,
+                              help='Output directory')
+    export_parser.add_argument('--config', type=str, default='configs/inference.yaml',
+                              help='Inference config file')
+    
+    return parser
+
+
+def cmd_scan(args):
+    """Execute scan command."""
+    logger = ProjectLogger()
+    logger.info(f"Scanning directory: {args.input_dir}")
+    
+    manifest = scan_audio_files(
+        Path(args.input_dir),
+        extensions=['.wav'],
+        recursive=True
+    )
+    
+    manifest.to_csv(args.output, index=False)
+    logger.info(f"Manifest saved to {args.output}")
+    logger.info(f"Found {len(manifest)} audio files")
+
+
+def cmd_detect(args):
+    """Execute detect command."""
+    logger = ProjectLogger()
+    config = load_config(args.config)
+    
+    logger.info(f"Detecting clicks in: {args.input}")
+    
+    # Load audio
+    audio, sr = sf.read(args.input)
+    
+    # Initialize detector
+    params = DetectionParams(
+        tkeo_threshold=config['thresholds']['tkeo_z'],
+        ste_threshold=config['thresholds']['ste_z'],
+        hfc_threshold=config['thresholds']['hfc_z'],
+        high_low_ratio_threshold=config['thresholds']['high_low_ratio'],
+        envelope_width_min=config['envelope']['width_min_ms'],
+        envelope_width_max=config['envelope']['width_max_ms'],
+        spectral_centroid_min=config['thresholds']['spectral_centroid_min'],
+        refractory_ms=config['refractory_ms']
+    )
+    
+    detector = AdaptiveDetector(sample_rate=sr, params=params)
+    
+    # Detect
+    candidates = detector.batch_detect(
+        audio,
+        chunk_duration=config['batch']['chunk_duration_s'],
+        overlap=config['batch']['overlap_s']
+    )
+    
+    logger.info(f"Detected {len(candidates)} candidates")
+    
+    # Extract event statistics
+    stats_extractor = EventStatsExtractor(sample_rate=sr)
+    stats_list = []
+    
+    for candidate in candidates:
+        stats = stats_extractor.extract_event_stats(audio, candidate)
+        stats_list.append(stats)
+    
+    # Save results
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    events_csv = output_dir / 'events.csv'
+    save_event_stats_csv(stats_list, events_csv)
+    
+    logger.info(f"Events saved to {events_csv}")
+
+# ========== Added: collect-clicks command implementation ==========
+def cmd_collect_clicks(args):
+    """收集所有 click 片段到单个目录."""
+    logger = ProjectLogger()
+    logger.info("开始收集 click 片段...")
+    
+    input_dir = Path(args.input)
+    output_dir = Path(args.output)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 查找所有 wav 文件
+    wav_files = list(input_dir.rglob('*.wav'))
+    logger.info(f"找到 {len(wav_files)} 个 click 片段")
+    
+    if not wav_files:
+        logger.error(f"未找到任何 WAV 文件: {input_dir}")
+        return
+    
+    # 复制到输出目录(重命名以避免冲突)
+    for i, wav_file in enumerate(tqdm(wav_files, desc="收集片段")):
+        # 保留原始文件前缀(来自父目录)
+        parent_name = wav_file.parent.name
+        new_name = f"{parent_name}_{wav_file.name}"
+        shutil.copy2(wav_file, output_dir / new_name)
+    
+    logger.info(f"✅ 收集完成,保存到 {output_dir}")
+
+# ========== Modified: batch-detect save audio segments ==========
+def cmd_batch_detect(args):
+    """Execute batch-detect command."""
+    logger = ProjectLogger()
+    config = load_config(args.config)
+    
+    input_dir = Path(args.input_dir)
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # ✅ 简化参数获取
+    segment_ms = args.segment_ms
+    
+    # 扫描 wav 文件
+    logger.info(f"扫描目录: {input_dir}")
+    if args.recursive:
+        wav_files = list(input_dir.rglob('*.wav'))
+    else:
+        wav_files = list(input_dir.glob('*.wav'))
+    
+    logger.info(f"找到 {len(wav_files)} 个 wav 文件")
+    
+    if not wav_files:
+        logger.error(f"未找到任何 WAV 文件: {input_dir}")
+        return
+    
+    # 初始化检测器
+    params = DetectionParams(
+        tkeo_threshold=config['thresholds']['tkeo_z'],
+        ste_threshold=config['thresholds']['ste_z'],
+        hfc_threshold=config['thresholds']['hfc_z'],
+        high_low_ratio_threshold=config['thresholds']['high_low_ratio'],
+        envelope_width_min=config['envelope']['width_min_ms'],
+        envelope_width_max=config['envelope']['width_max_ms'],
+        spectral_centroid_min=config['thresholds']['spectral_centroid_min'],
+        refractory_ms=config['refractory_ms'],
+        enable_transient_filter=config['transient'].get('enable_filter', True),
+        min_dolphin_likelihood=config['transient'].get('min_dolphin_likelihood', 0.3)
+    )
+    
+    all_stats = []
+    total_candidates = 0
+    
+    # 处理每个文件
+    for wav_file in tqdm(wav_files, desc="检测 clicks"):
+        try:
+            audio, sr = sf.read(wav_file)
+            file_id = wav_file.stem
+            
+            # 检测
+            detector = AdaptiveDetector(sample_rate=sr, params=params)
+            candidates = detector.batch_detect(
+                audio,
+                chunk_duration=config['batch']['chunk_duration_s'],
+                overlap=config['batch']['overlap_s']
+            )
+            
+            total_candidates += len(candidates)
+            logger.info(f"{wav_file.name}: 检测到 {len(candidates)} 个候选")
+            
+            # 提取统计信息
+            stats_extractor = EventStatsExtractor(sample_rate=sr)
+            for candidate in candidates:
+                stats = stats_extractor.extract_event_stats(audio, candidate)
+                stats['file_id'] = file_id
+                stats['source_file'] = str(wav_file)
+                all_stats.append(stats)
+            
+            # 保存音频片段
+            if args.save_audio and candidates:
+                audio_dir = output_dir / 'audio' / file_id
+                audio_dir.mkdir(parents=True, exist_ok=True)
+                
+                segment_samples = int(segment_ms * sr / 1000)
+                
+                for i, candidate in enumerate(candidates):
+                    # 提取固定长度片段(以峰值为中心)
+                    half_window = segment_samples // 2
+                    start_idx = max(0, candidate.peak_idx - half_window)
+                    end_idx = min(len(audio), candidate.peak_idx + half_window)
+                    
+                    segment = audio[start_idx:end_idx]
+                    
+                    # 如需填充
+                    if len(segment) < segment_samples:
+                        pad_left = (segment_samples - len(segment)) // 2
+                        pad_right = segment_samples - len(segment) - pad_left
+                        segment = np.pad(segment, (pad_left, pad_right), mode='reflect')
+                    
+                    # 归一化(避免后续削波)
+                    peak_val = np.max(np.abs(segment))
+                    if peak_val > 0:
+                        segment = segment / peak_val * 0.95  # 留 5% 余量
+                    
+                    # 保存
+                    timestamp_ms = int(candidate.peak_time * 1000)
+                    filename = f"click_{i:04d}_{timestamp_ms:08d}ms.wav"
+                    sf.write(audio_dir / filename, segment, sr)
+                
+        except Exception as e:
+            logger.error(f"处理 {wav_file} 时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            continue
+    
+    # 保存汇总 CSV
+    if all_stats:
+        csv_path = output_dir / 'all_events.csv'
+        save_event_stats_csv(all_stats, csv_path)
+        logger.info(f"✅ 保存 {len(all_stats)} 个事件到 {csv_path}")
+        logger.info(f"✅ 处理完成! 总共检测到 {total_candidates} 个 click 候选")
+    else:
+        logger.warning("⚠️  未检测到任何事件")
+
+
+def cmd_trains(args):
+    """Execute trains command."""
+    logger = ProjectLogger()
+    config = load_config(args.config)
+    
+    logger.info(f"Building trains from: {args.events_csv}")
+    
+    # Load events (this is simplified - in practice you'd reconstruct ClickCandidate objects)
+    events_df = pd.read_csv(args.events_csv)
+    
+    # For this example, we'll need to import the candidates from somewhere
+    # This is a placeholder - actual implementation would need to deserialize candidates
+    logger.warning("Train building from CSV requires candidate objects - not fully implemented")
+    
+    # Initialize train builder
+    train_builder = TrainBuilder(
+        min_ici_ms=config['train']['min_ici_ms'],
+        max_ici_ms=config['train']['max_ici_ms'],
+        min_train_clicks=config['train']['min_train_clicks']
+    )
+    
+    # Build trains (placeholder)
+    # trains = train_builder.build_trains(candidates)
+    
+    logger.info("Train building command - implementation depends on serialization format")
+
+
+def cmd_build_dataset(args):
+    """Execute build-dataset command（支持Click Train序列 + SNR混合）."""
+    logger = ProjectLogger()
+    config = load_config(args.config)
+    
+    logger.info("=" * 60)
+    logger.info("构建训练数据集（单click + click train序列 + SNR混合）")
+    logger.info("=" * 60)
+    
+    # 初始化
+    dataset_config = config['dataset']
+    sample_rate = config.get('sample_rate', 44100)
+    window_ms = dataset_config.get('window_ms', 120.0)
+    expected_length = int(window_ms * sample_rate / 1000)
+    
+    logger.info(f"单click片段长度: {window_ms}ms ({expected_length} 样本)")
+    
+    builder = DatasetBuilder(
+        sample_rate=sample_rate,
+        window_ms=window_ms,
+        random_offset_ms=dataset_config['random_offset_ms'],
+        unified_length_ms=500.0  # 统一到500ms
+    )
+    
+    # 初始化增强器
+    augmentation_config = config.get('augmentation', {})
+    augmenter = AugmentationPipeline(
+        sample_rate=sample_rate,
+        snr_range=tuple(augmentation_config.get('snr_range', [-5, 5])),
+        time_shift_ms=augmentation_config.get('time_shift_ms', 10.0),
+        amplitude_range=tuple(augmentation_config.get('amplitude_range', [0.8, 1.25])),
+        apply_prob=augmentation_config.get('apply_prob', 0.8)
+    )
+    
+    logger.info(f"\n增强设置:")
+    logger.info(f"  SNR范围: {augmenter.snr_range} dB")
+    logger.info(f"  统一样本长度: 500ms ({builder.unified_samples} 样本)")
+    logger.info(f"  时间偏移: ±{augmentation_config.get('time_shift_ms', 10.0)} ms")
+    logger.info(f"  应用概率: {augmenter.apply_prob}")
+    
+    events_dir = Path(args.events_dir)
+    noise_dir = Path(args.noise_dir)
+    output_dir = Path(args.output_dir)
+    
+    # ========== 加载噪音池 ==========
+    logger.info(f"\n加载噪音文件池...")
+    noise_files = list(noise_dir.rglob('*.wav'))
+    
+    if not noise_files:
+        logger.error(f"未找到噪音文件: {noise_dir}")
+        return
+    
+    logger.info(f"找到 {len(noise_files)} 个噪音文件")
+    
+    max_noise_files = min(len(noise_files), 100)
+    noise_pool = []
+    
+    from tqdm import tqdm
+    import random
+    
+    selected_noise_files = random.sample(noise_files, max_noise_files)
+    
+    for noise_file in tqdm(selected_noise_files, desc="加载噪音池"):
+        try:
+            noise_audio, sr = sf.read(noise_file)
+            
+            if sr != sample_rate:
+                import librosa
+                noise_audio = librosa.resample(noise_audio, orig_sr=sr, target_sr=sample_rate)
+            
+            if noise_audio.ndim == 2:
+                noise_audio = noise_audio.mean(axis=1)
+            
+            noise_pool.append(noise_audio)
+            
+        except Exception as e:
+            logger.error(f"加载噪音失败 {noise_file}: {e}")
+            continue
+    
+    logger.info(f"成功加载 {len(noise_pool)} 个噪音片段")
+    
+    if len(noise_pool) == 0:
+        logger.error("噪音池为空！")
+        return
+    
+    all_positive_samples = []
+    all_negative_samples = []
+    
+    # ========== 处理正样本：单click片段 ==========
+    logger.info(f"\n处理单Click正样本...")
+    
+    positive_files = list(events_dir.rglob('*.wav'))
+    
+    if not positive_files:
+        logger.error(f"未找到positive样本: {events_dir}")
+        return
+    
+    logger.info(f"找到 {len(positive_files)} 个click片段")
+    
+    n_augmented = 0
+    
+    for audio_file in tqdm(positive_files, desc="处理单Click"):
+        try:
+            audio, sr = sf.read(audio_file)
+            
+            if sr != sample_rate:
+                import librosa
+                audio = librosa.resample(audio, orig_sr=sr, target_sr=sample_rate)
+            
+            if audio.ndim == 2:
+                audio = audio.mean(axis=1)
+            
+            # 长度调整
+            if len(audio) != expected_length:
+                if len(audio) < expected_length:
+                    pad_length = expected_length - len(audio)
+                    audio = np.pad(audio, (0, pad_length), mode='constant')
+                else:
+                    start = (len(audio) - expected_length) // 2
+                    audio = audio[start:start + expected_length]
+            
+            # ========== 修复后的SNR混合 ==========
+            # 1. RMS归一化click
+            rms_click = np.sqrt(np.mean(audio**2))
+            if rms_click > 0:
+                audio = audio / rms_click
+            
+            # 2. 随机选择噪音
+            noise = random.choice(noise_pool)
+            
+            # 确保噪音长度匹配
+            if len(noise) >= len(audio):
+                start = random.randint(0, len(noise) - len(audio))
+                noise = noise[start:start + len(audio)]
+            else:
+                repeats = int(np.ceil(len(audio) / len(noise)))
+                noise = np.tile(noise, repeats)[:len(audio)]
+            
+            # 3. RMS归一化噪音
+            rms_noise = np.sqrt(np.mean(noise**2))
+            if rms_noise > 0:
+                noise = noise / rms_noise
+            
+            # 4. SNR混合
+            if random.random() < augmenter.apply_prob:
+                target_snr = random.uniform(*augmenter.snr_range)
+                
+                snr_linear = 10**(target_snr / 10)
+                signal_power = np.mean(audio**2)
+                noise_power = np.mean(noise**2)
+                
+                if noise_power > 0:
+                    noise_scale = np.sqrt(signal_power / (snr_linear * noise_power))
+                else:
+                    noise_scale = 0
+                
+                augmented_audio = audio + noise_scale * noise
+                n_augmented += 1
+            else:
+                augmented_audio = audio.copy()
+            
+            # 5. 峰值归一化（留余量）
+            peak = np.max(np.abs(augmented_audio))
+            if peak > 0:
+                augmented_audio = augmented_audio / peak * 0.95
+            
+            # ========== 新增：Padding到统一长度（500ms）==========
+            augmented_audio = builder._pad_to_unified_length(augmented_audio)
+            
+            # 6. 保存样本
+            file_id = audio_file.stem
+            all_positive_samples.append({
+                'waveform': augmented_audio,
+                'label': 1,
+                'file_id': file_id
+            })
+            
+        except Exception as e:
+            logger.error(f"处理 {audio_file} 时出错: {e}")
+            continue
+    
+    logger.info(f"\n单Click正样本:")
+    logger.info(f"  总数: {len(all_positive_samples)}")
+    logger.info(f"  SNR增强: {n_augmented} ({n_augmented/len(all_positive_samples)*100:.1f}%)")
+    
+    # ========== 新增：生成Click Train序列样本 ==========
+    train_config = dataset_config.get('click_train', {})
+    enable_train = train_config.get('enable', False)  # 默认关闭
+    
+    if enable_train:
+        logger.info(f"\n生成Click Train序列样本...")
+        
+        # 获取配置
+        train_ratio = train_config.get('train_ratio', 0.3)  # train样本占正样本的比例
+        train_length_ms = train_config.get('train_length_ms', 500.0)
+        min_clicks = train_config.get('min_clicks', 2)
+        max_clicks = train_config.get('max_clicks', 5)
+        ici_range_ms = tuple(train_config.get('ici_range_ms', [10.0, 80.0]))
+        
+        n_train_samples = int(len(all_positive_samples) * train_ratio)
+        
+        logger.info(f"  目标Train样本数: {n_train_samples}")
+        logger.info(f"  Train长度: {train_length_ms}ms")
+        logger.info(f"  Clicks数范围: {min_clicks}-{max_clicks}")
+        logger.info(f"  ICI范围: {ici_range_ms} ms")
+        
+        # 调用新方法
+        train_samples = builder.build_click_train_samples(
+            click_files=positive_files,
+            n_train_samples=n_train_samples,
+            train_length_ms=train_length_ms,
+            min_clicks=min_clicks,
+            max_clicks=max_clicks,
+            ici_range_ms=ici_range_ms,
+            sample_rate=sample_rate
+        )
+        
+        # 合并到正样本
+        all_positive_samples.extend(train_samples)
+        
+        logger.info(f"  实际生成: {len(train_samples)} 个Train序列")
+        logger.info(f"  正样本总数: {len(all_positive_samples)}")
+    
+    # ========== 处理负样本 ==========
+    logger.info(f"\n处理负样本...")
+    
+    balance_ratio = dataset_config.get('balance_ratio', 1.0)
+    n_negative_target = int(len(all_positive_samples) * balance_ratio)
+    n_negative_per_file = max(1, n_negative_target // len(noise_files))
+    
+    logger.info(f"目标负样本数: {n_negative_target}")
+    logger.info(f"每个噪音文件采样数: {n_negative_per_file}")
+    
+    for noise_file in tqdm(noise_files, desc="处理负样本"):
+        try:
+            audio, sr = sf.read(noise_file)
+            
+            if sr != sample_rate:
+                import librosa
+                audio = librosa.resample(audio, orig_sr=sr, target_sr=sample_rate)
+            
+            if audio.ndim == 2:
+                audio = audio.mean(axis=1)
+            
+            file_id = noise_file.stem
+            negative_samples = builder.build_negative_samples(
+                audio, file_id, n_negative_per_file
+            )
+            all_negative_samples.extend(negative_samples)
+            
+        except Exception as e:
+            logger.error(f"处理 {noise_file} 时出错: {e}")
+            continue
+    
+    logger.info(f"负样本: {len(all_negative_samples)}")
+    
+    # ========== 合并和平衡 ==========
+    logger.info(f"\n平衡数据集...")
+    all_samples = all_positive_samples + all_negative_samples
+    
+    if not all_samples:
+        logger.error("未收集到任何样本！")
+        return
+    
+    balanced_samples = builder.balance_dataset(
+        all_samples,
+        balance_ratio=balance_ratio
+    )
+    
+    logger.info(f"平衡后总样本: {len(balanced_samples)}")
+    
+    # 验证样本形状
+    sample_lengths = [len(s['waveform']) for s in balanced_samples[:10]]
+    logger.info(f"样本长度验证（前10）: {sample_lengths}")
+    
+    n_positive = sum(1 for s in balanced_samples if s['label'] == 1)
+    n_negative = len(balanced_samples) - n_positive
+    logger.info(f"最终组成:")
+    logger.info(f"  正样本: {n_positive}")
+    logger.info(f"  负样本: {n_negative}")
+    logger.info(f"  比例: 1:{n_negative/n_positive:.2f}")
+    
+    # ========== 划分训练/验证集 ==========
+    logger.info(f"\n划分训练/验证集...")
+    val_split = dataset_config.get('val_split', 0.2)
+    n_val = int(len(balanced_samples) * val_split)
+    
+    np.random.seed(42)
+    np.random.shuffle(balanced_samples)
+    
+    train_samples = balanced_samples[n_val:]
+    val_samples = balanced_samples[:n_val]
+    
+    logger.info(f"训练集: {len(train_samples)}")
+    logger.info(f"验证集: {len(val_samples)}")
+    
+    # ========== 保存 ==========
+    logger.info(f"\n保存到 {output_dir}")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    builder.save_dataset(train_samples, output_dir, split='train')
+    builder.save_dataset(val_samples, output_dir, split='val')
+    
+    # ========== 总结 ==========
+    logger.info("\n" + "=" * 60)
+    logger.info("✅ 数据集构建完成")
+    logger.info("=" * 60)
+    logger.info(f"数据集保存到: {output_dir}")
+    logger.info(f"单Click样本: {len(all_positive_samples) - len(train_samples if enable_train else [])}")
+    if enable_train:
+        logger.info(f"Click Train序列: {len(train_samples) if 'train_samples' in locals() else 0}")
+    logger.info(f"SNR增强: {n_augmented} 个单click")
+    logger.info(f"训练/验证划分: {len(train_samples)}/{len(val_samples)}")
+    logger.info("=" * 60)
+
+
+def cmd_train(args):
+    """Execute train command."""
+    logger = ProjectLogger()
+    config = load_config(args.config)
+    
+    logger.info("Starting model training")
+    
+    # Load dataset
+    dataset_dir = Path(args.dataset_dir)
+    builder = DatasetBuilder()
+    
+    train_waveforms, train_labels, _ = builder.load_dataset(dataset_dir / 'train')
+    val_waveforms, val_labels, _ = builder.load_dataset(dataset_dir / 'val')
+    
+    logger.info(f"Training samples: {len(train_waveforms)}")
+    logger.info(f"Validation samples: {len(val_waveforms)}")
+    
+    # Create data loaders
+    train_loader = torch.utils.data.DataLoader(
+        torch.utils.data.TensorDataset(
+            torch.from_numpy(train_waveforms).float(),
+            torch.from_numpy(train_labels).long()
+        ),
+        batch_size=config['training']['batch_size'],
+        shuffle=True
+    )
+    
+    val_loader = torch.utils.data.DataLoader(
+        torch.utils.data.TensorDataset(
+            torch.from_numpy(val_waveforms).float(),
+            torch.from_numpy(val_labels).long()
+        ),
+        batch_size=config['training']['batch_size'],
+        shuffle=False
+    )
+    
+    # Create model
+    model = create_model(config['model'])
+    
+    # Calculate class weights
+    unique, counts = np.unique(train_labels, return_counts=True)
+    class_weights = torch.FloatTensor(len(counts) / counts)
+    
+    # Initialize trainer
+    trainer = Trainer(
+        model=model,
+        device=config['device'],
+        learning_rate=config['training']['learning_rate'],
+        weight_decay=config['training']['weight_decay'],
+        class_weights=class_weights
+    )
+    
+    # Train
+    output_dir = Path(args.output_dir)
+    history = trainer.train(
+        train_loader=train_loader,
+        val_loader=val_loader,
+        num_epochs=config['training']['num_epochs'],
+        early_stopping_patience=config['training']['early_stopping_patience'],
+        checkpoint_dir=output_dir
+    )
+    
+    logger.info("Training completed")
+
+
+def cmd_eval(args):
+    """Execute eval command."""
+    logger = ProjectLogger()
+    
+    logger.info("Evaluating model")
+    
+    # Load model
+    inference = ClickDetectorInference.from_checkpoint(
+        args.checkpoint,
+        device='cpu',
+        batch_size=32
+    )
+    
+    # Load test dataset
+    dataset_dir = Path(args.dataset_dir)
+    builder = DatasetBuilder()
+    test_waveforms, test_labels, _ = builder.load_dataset(dataset_dir)
+    
+    logger.info(f"Test samples: {len(test_waveforms)}")
+    
+    # Predict
+    y_proba = inference.predict_batch(test_waveforms)
+    y_pred = (y_proba >= 0.5).astype(int)
+    
+    # Generate report
+    reporter = EvaluationReporter(Path(args.output_dir))
+    
+    # Convert to 2D probabilities
+    y_proba_2d = np.column_stack([1 - y_proba, y_proba])
+    
+    generated_files = reporter.generate_report(
+        y_true=test_labels,
+        y_pred=y_pred,
+        y_proba=y_proba_2d,
+        metadata={
+            'checkpoint': args.checkpoint,
+            'dataset': args.dataset_dir
+        }
+    )
+    
+    logger.info(f"Evaluation report generated at {args.output_dir}")
+
+
+def cmd_export(args):
+    """Execute export command."""
+    logger = ProjectLogger()
+    detection_config = load_config('configs/detection.yaml')
+    inference_config = load_config(args.config)
+    
+    logger.info(f"Processing file: {args.input}")
+    
+    # Load audio
+    audio, sr = sf.read(args.input)
+    file_id = Path(args.input).stem
+    
+    # Step 1: Rule-based detection
+    params = DetectionParams(
+        tkeo_threshold=detection_config['thresholds']['tkeo_z'],
+        ste_threshold=detection_config['thresholds']['ste_z'],
+        hfc_threshold=detection_config['thresholds']['hfc_z'],
+        high_low_ratio_threshold=detection_config['thresholds']['high_low_ratio'],
+        envelope_width_min=detection_config['envelope']['width_min_ms'],
+        envelope_width_max=detection_config['envelope']['width_max_ms'],
+        spectral_centroid_min=detection_config['thresholds']['spectral_centroid_min'],
+        refractory_ms=detection_config['refractory_ms']
+    )
+    
+    detector = AdaptiveDetector(sample_rate=sr, params=params)
+    candidates = detector.batch_detect(audio)
+    
+    logger.info(f"Rule-based detection: {len(candidates)} candidates")
+    
+    # Step 2: Extract 0.2s windows for model inference
+    builder = DatasetBuilder(sample_rate=sr)
+    windows = []
+    
+    for candidate in candidates:
+        window = builder._extract_centered_window(audio, candidate.peak_idx)
+        if window is not None:
+            windows.append(window)
+        else:
+            windows.append(np.zeros(builder.window_samples))
+    
+    windows = np.array(windows)
+    
+    # Step 3: Model inference
+    inference = ClickDetectorInference.from_checkpoint(
+        args.checkpoint,
+        device='cpu',
+        batch_size=inference_config['batch_size']
+    )
+    
+    model_scores = inference.predict_batch(windows)
+    logger.info(f"Model inference completed")
+    
+    # Step 4: Fusion decision
+    fusion_cfg = FusionConfig(
+        high_confidence_threshold=inference_config['fusion']['high_confidence_threshold'],
+        medium_confidence_threshold=inference_config['fusion']['medium_confidence_threshold'],
+        train_consistency_required=inference_config['fusion']['train_consistency_required'],
+        min_train_clicks=inference_config['fusion']['min_train_clicks'],
+        max_ici_cv=inference_config['fusion']['max_ici_cv'],
+        doublet_min_ici_ms=inference_config['doublet']['min_ici_ms'],
+        doublet_max_ici_ms=inference_config['doublet']['max_ici_ms'],
+        doublet_min_confidence=inference_config['doublet']['min_confidence']
+    )
+    
+    decider = FusionDecider(config=fusion_cfg)
+    accepted_indices, decision_info = decider.apply_fusion(candidates, model_scores)
+    
+    accepted_candidates = [candidates[i] for i in accepted_indices]
+    
+    logger.info(f"Fusion decision: {len(accepted_candidates)} accepted")
+    logger.info(decider.get_statistics(decision_info))
+    
+    # Step 5: Build trains
+    train_builder = TrainBuilder(
+        min_ici_ms=detection_config['train']['min_ici_ms'],
+        max_ici_ms=detection_config['train']['max_ici_ms'],
+        min_train_clicks=detection_config['train']['min_train_clicks']
+    )
+    
+    trains = train_builder.build_trains(accepted_candidates)
+    logger.info(f"Built {len(trains)} click trains")
+    
+    # Step 6: Export results
+    output_dir = Path(args.output_dir)
+    exporter = ExportWriter(output_dir, sample_rate=sr)
+    
+    if inference_config['export']['export_events']:
+        event_files = exporter.export_events(
+            accepted_candidates,
+            audio,
+            file_id,
+            export_audio=inference_config['export']['export_audio']
+        )
+        logger.info(f"Events exported to {event_files['csv']}")
+    
+    if inference_config['export']['export_trains']:
+        train_files = exporter.export_trains(
+            trains,
+            accepted_candidates,
+            audio,
+            file_id,
+            export_audio=inference_config['export']['export_audio']
+        )
+        logger.info(f"Trains exported to {train_files['csv']}")
+    
+    if inference_config['export']['create_summary']:
+        summary_stats = {
+            'total_candidates': len(candidates),
+            'accepted_clicks': len(accepted_candidates),
+            'rejection_rate': 1 - len(accepted_candidates) / len(candidates) if candidates else 0,
+            'num_trains': len(trains),
+            **decision_info
+        }
+        
+        report_path = exporter.create_summary_report(file_id, summary_stats)
+        logger.info(f"Summary report: {report_path}")
+    
+    logger.info("Export completed successfully")
+
+def cmd_eval_wav(args):
+    """Execute eval-wav command."""
+    logger = ProjectLogger()
+    config = load_config(args.config)
+    
+    logger.info("开始 WAV 文件评估")
+    
+    # 使用配置文件或命令行参数
+    positive_dir = args.positive_dir or config['data']['positive_dir']
+    negative_dir = args.negative_dir or config['data']['negative_dir']
+    file_threshold = args.file_threshold or config['thresholds']['window_threshold']
+    min_positive_ratio = args.min_positive_ratio or config['thresholds']['min_positive_ratio']
+    
+    # 导入评估函数
+    from eval_wav_files import evaluate_wav_dataset
+    
+    # 执行评估
+    metrics, results = evaluate_wav_dataset(
+        checkpoint_path=args.checkpoint,
+        positive_dir=positive_dir,
+        negative_dir=negative_dir,
+        output_dir=args.output_dir,
+        file_threshold=file_threshold,
+        min_positive_ratio=min_positive_ratio,
+        device=config['inference'].get('device', 'cpu')
+    )
+    
+    logger.info("WAV 文件评估完成")
+
+
+def main():
+    """Main entry point."""
+    parser = setup_argparse()
+    args = parser.parse_args()
+    
+    if args.command is None:
+        parser.print_help()
+        sys.exit(1)
+    
+    # Route command
+    commands = {
+        'scan': cmd_scan,
+        'detect': cmd_detect,
+        'batch-detect': cmd_batch_detect,
+        'collect-clicks': cmd_collect_clicks,  # Added
+        'trains': cmd_trains,
+        'build-dataset': cmd_build_dataset,    # Fixed
+        'train': cmd_train,
+        'eval': cmd_eval,
+        'eval-wav': cmd_eval_wav,
+        'export': cmd_export
+    }
+    
+    try:
+        commands[args.command](args)
+    except Exception as e:
+        logger = ProjectLogger()
+        logger.error(f"Command failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()
